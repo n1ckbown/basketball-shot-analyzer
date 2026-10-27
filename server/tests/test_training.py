@@ -1,4 +1,4 @@
-from training.autolabel import category_for, is_plausible, to_coco_annotation
+from training.autolabel import category_for, is_plausible, padded_box, to_coco_annotation
 from training.collect import licensed_images, tagged_image_ids
 from training.train import flip_annotations, split_ids
 
@@ -38,6 +38,10 @@ def test_is_plausible_rejects_people_shaped_and_huge_boxes():
     assert is_plausible((100, 100, 200, 140), 1, 1000, 800)  # rim seen from the side
     assert not is_plausible((0, 0, 900, 400), 1, 1000, 800)  # covers 45% of the image
     assert not is_plausible((10, 10, 10, 30), 0, 1000, 800)  # zero width
+
+
+def test_padded_box_grows_by_the_longer_side():
+    assert padded_box((100, 100, 140, 120), 0.5) == (80, 80, 160, 140)
 
 
 def test_to_coco_annotation_converts_corners_to_xywh():

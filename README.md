@@ -45,8 +45,8 @@ The pretrained model has no hoop class, so we fine-tune it. Three steps, run fro
    - `imagelabels.csv` from https://storage.googleapis.com/openimages/v7/oidv7-train-annotations-human-imagelabels.csv
    - `images.csv` from https://storage.googleapis.com/openimages/v6/oidv6-train-images-with-labels-with-rotation.csv
 2. `python -m training.collect` downloads every photo humans tagged as basketball, ball, hoop, rim or court (CC BY 2.0 only) and writes the photo credits to `data/openimages/attribution.csv`. **These credits must be kept**: CC BY requires crediting the photographers if the model ships.
-3. `python -m training.autolabel` draws draft ball and rim boxes with Grounding DINO (Apache-2.0) and drops boxes with impossible shapes. Check `data/openimages/previews_autolabel/` to judge label quality.
-4. `python -m training.train` fine-tunes RT-DETRv2 and saves the best model to `data/models/ball-hoop-v1`, with sample predictions in its `previews/` folder. Use it with `DETECTOR_MODEL=../data/models/ball-hoop-v1`.
+3. `python -m training.autolabel` draws draft ball and rim boxes with Grounding DINO (Apache-2.0), drops boxes with impossible shapes, and asks CLIP (MIT) to confirm each rim box looks like a hoop, which removes balls, shot clocks and logos. Check `data/openimages/previews_autolabel/` to judge label quality.
+4. `python -m training.train` fine-tunes RT-DETRv2 and saves the best model to `data/models/ball-hoop-v2`, with sample predictions in its `previews/` folder. Use it with `DETECTOR_MODEL=../data/models/ball-hoop-v2`.
 
 The auto-generated labels are noisy (about 60% looked right in a spot check before the shape filter), so treat this model as a first draft to improve with reviewed labels and real footage.
 
