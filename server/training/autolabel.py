@@ -16,7 +16,9 @@ LABELER_MODEL = "IDEA-Research/grounding-dino-base"  # Apache-2.0
 PROMPT = "basketball. basketball rim."
 BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.25
-BATCH_SIZE = 4
+# Batches of 4 overflowed 8 GB of GPU memory on large photos, and Windows then spills into much slower system RAM.
+BATCH_SIZE = 1
+PROGRESS_EVERY = 200
 PREVIEW_COUNT = 40
 CATEGORIES = [{"id": 0, "name": "ball"}, {"id": 1, "name": "hoop"}]
 # Width/height ranges a real ball (round) or rim (round to wide ellipse) can have; tall boxes are usually people.
@@ -108,7 +110,7 @@ def main():
                 coco["annotations"].append(a)
             if image_id < PREVIEW_COUNT:
                 save_preview(image, annotations, previews / path.name)
-        if start % 1000 < BATCH_SIZE:
+        if start % PROGRESS_EVERY < BATCH_SIZE:
             print(f"labeled {start + len(batch)}/{len(paths)}, kept {len(coco['images'])}", flush=True)
 
     (DATA_DIR / "labels.json").write_text(json.dumps(coco))
