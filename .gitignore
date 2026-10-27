@@ -11,6 +11,7 @@ __pycache__/
 node_modules/
 .expo/
 
-# Recorded videos used for local testing
+# Recorded videos used for local testing, and videos uploaded to a local server
+uploads/
 *.mp4
 *.mov
