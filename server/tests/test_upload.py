@@ -6,9 +6,21 @@ from app import main
 client = TestClient(main.app)
 
 
+RESULT = {"attempts": 2, "makes": 1, "shots": [{"time": 3.0, "made": True}, {"time": 9.5, "made": False}]}
+
+
+class RunNow:
+    """Runs submitted jobs immediately, so tests don't wait on a background thread."""
+
+    def submit(self, fn, *args):
+        fn(*args)
+
+
 @pytest.fixture(autouse=True)
 def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
+    monkeypatch.setattr(main, "worker", RunNow())
+    monkeypatch.setattr(main, "analyze_video", lambda path: RESULT)
     return tmp_path
 
 
@@ -28,7 +40,8 @@ def test_upload_keeps_mov_extension_and_ignores_client_file_name(upload_dir):
     response = upload(b"mov bytes", "video/quicktime", "../../evil.sh")
 
     assert response.status_code == 201
-    assert [p.name for p in upload_dir.iterdir()] == [f"{response.json()['job_id']}.mov"]
+    job_id = response.json()["job_id"]
+    assert sorted(p.name for p in upload_dir.iterdir()) == [f"{job_id}.json", f"{job_id}.mov"]
 
 
 def test_upload_rejects_non_video(upload_dir):
@@ -48,3 +61,34 @@ def test_upload_rejects_file_over_limit(upload_dir, monkeypatch):
 
     assert upload(b"four").status_code == 413
     assert list(upload_dir.iterdir()) == []
+
+
+def test_result_is_available_after_processing():
+    job_id = upload(b"fake video bytes").json()["job_id"]
+
+    assert client.get(f"/videos/{job_id}").json() == {"status": "done", **RESULT}
+
+
+def test_result_says_processing_until_analysis_finishes(upload_dir):
+    job_id = "0" * 32
+    (upload_dir / f"{job_id}.mov").write_bytes(b"video")
+
+    assert client.get(f"/videos/{job_id}").json() == {"status": "processing"}
+
+
+def test_failed_analysis_is_reported(monkeypatch):
+    def broken(path):
+        raise ValueError("Could not open video")
+
+    monkeypatch.setattr(main, "analyze_video", broken)
+    job_id = upload(b"not really a video").json()["job_id"]
+
+    assert client.get(f"/videos/{job_id}").json() == {"status": "failed", "error": "Could not open video"}
+
+
+def test_unknown_or_malformed_job_ids_are_not_found(upload_dir):
+    (upload_dir / "secret.json").write_text("{}")
+
+    assert client.get(f"/videos/{'a' * 32}").status_code == 404
+    assert client.get("/videos/secret").status_code == 404
+    assert client.get("/videos/..%2Fsecret").status_code == 404
