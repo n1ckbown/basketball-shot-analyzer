@@ -48,7 +48,7 @@ The pretrained model has no hoop class, so we fine-tune it. Three steps, run fro
 3. `python -m training.autolabel` draws draft ball and rim boxes with Grounding DINO (Apache-2.0), drops boxes with impossible shapes, and asks CLIP (MIT) to confirm each rim box looks like a hoop, which removes balls, shot clocks and logos. Check `data/openimages/previews_autolabel/` to judge label quality.
 4. `python -m training.train` fine-tunes RT-DETRv2 and saves the best model to `data/models/ball-hoop-v3`, with sample predictions in its `previews/` folder. Use it with `DETECTOR_MODEL=../data/models/ball-hoop-v3`.
 
-The auto-generated labels are noisy (about 60% looked right in a spot check before the shape filter), so treat this model as a first draft to improve with reviewed labels and real footage.
+Label quality in spot checks: about 9 in 10 ball boxes and 9 in 10 hoop boxes are right. Some "ball" boxes still cover the player holding the ball. The resulting model (v3: 5,880 images, 5,673 ball and 2,851 hoop boxes) found 39 of 44 labeled balls and 21 of 23 labeled hoops on held-out photos. It has not been tried on phone video yet, so check it on real footage before relying on it.
 
 ## Quick start (app)
 
@@ -68,7 +68,7 @@ Each step is one pull request.
 1. Project scaffold: repo, rules, server skeleton, tests (done)
 2. App: record a session with the phone camera and save it to the photo library (done)
 3. Server: upload endpoint that accepts a video and returns a job ID (done: `POST /videos`, saved to `UPLOAD_DIR`, default `uploads/`)
-4. Server: detect the ball and hoop in each frame (pipeline done: `server/app/detection.py`; next: fine-tune RT-DETR on ball + hoop images, since the pretrained model has no hoop class and is unreliable on basketballs)
+4. Server: detect the ball and hoop in each frame (pipeline in `server/app/detection.py` and a fine-tuned detector from `server/training/`; next: check it on real session videos)
 5. Server: track shots and decide make or miss, with a count per session
 6. App: upload a session and show makes, misses and shooting percentage
 7. Server + app: per-shot feedback (release angle, arc, left/right miss)
