@@ -8,6 +8,8 @@ import statistics
 import sys
 from dataclasses import dataclass
 
+import cv2
+
 from app.detection import Detection, Detector, detect_video
 
 # A ball near the rim: up to one rim width either side, from two rim heights above to half a height below its top.
@@ -118,14 +120,21 @@ def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Sh
     return shots
 
 
+def analyze_video(path, detector) -> dict:
+    """Shots in a video file as JSON-ready data: totals, then the time in seconds and make or miss of each shot."""
+    fps = cv2.VideoCapture(str(path)).get(cv2.CAP_PROP_FPS)
+    shots = find_shots(detect_video(path, detector), fps)
+    return {
+        "attempts": len(shots),
+        "makes": sum(s.made for s in shots),
+        "shots": [{"time": round(s.frame / fps, 1), "made": s.made} for s in shots],
+    }
+
+
 if __name__ == "__main__":
     # Manual check on a real video: python -m app.shots path/to/video.mov
-    import cv2
-
-    fps = cv2.VideoCapture(sys.argv[1]).get(cv2.CAP_PROP_FPS)
-    shots = find_shots(detect_video(sys.argv[1], Detector()), fps)
-    for shot in shots:
-        seconds = shot.frame / fps
-        print(f"{int(seconds // 60)}:{seconds % 60:04.1f} {'make' if shot.made else 'miss'}")
-    makes = sum(s.made for s in shots)
-    print(f"{makes} of {len(shots)} made")
+    result = analyze_video(sys.argv[1], Detector())
+    for shot in result["shots"]:
+        minutes, seconds = divmod(shot["time"], 60)
+        print(f"{int(minutes)}:{seconds:04.1f} {'make' if shot['made'] else 'miss'}")
+    print(f"{result['makes']} of {result['attempts']} made")

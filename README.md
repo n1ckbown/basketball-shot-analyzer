@@ -19,6 +19,16 @@ python -m pytest
 uvicorn app.main:app --app-dir server --reload   # then open http://127.0.0.1:8000/health
 ```
 
+To analyze uploads, start the server from the repo root with the fine-tuned model (see "Training the ball/hoop detector"). Add `--host 0.0.0.0` so a phone on the same Wi-Fi can reach it:
+
+```
+$env:DETECTOR_MODEL = "data\models\ball-hoop-v3"    # PowerShell
+uvicorn app.main:app --app-dir server --host 0.0.0.0
+```
+
+- `POST /videos` (form field `file`, MP4 or MOV) saves the video, queues it for analysis and returns `{"job_id": ...}`. Videos are analyzed one at a time.
+- `GET /videos/{job_id}` returns `{"status": "processing"}` until analysis finishes. Then it returns `{"status": "done", "attempts": 35, "makes": 11, "shots": [{"time": 18.1, "made": true}, ...]}`, where `time` is seconds into the video. If analysis fails it returns `{"status": "failed", "error": ...}`.
+
 ### Using an NVIDIA GPU (recommended for detection)
 
 `requirements.txt` installs the CPU build of PyTorch. On a machine with an NVIDIA GPU, install the CUDA build instead, then the rest:
@@ -78,7 +88,7 @@ Each step is one pull request.
 3. Server: upload endpoint that accepts a video and returns a job ID (done: `POST /videos`, saved to `UPLOAD_DIR`, default `uploads/`)
 4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
-6. App: upload a session and show makes, misses and shooting percentage
+6. App: upload a session and show makes, misses and shooting percentage (server side done: `GET /videos/{job_id}`; next: upload and results screen in the app)
 7. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
 ## Ownership
