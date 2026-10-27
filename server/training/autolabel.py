@@ -8,6 +8,7 @@ from pathlib import Path
 
 import torch
 from PIL import Image, ImageDraw
+from torchvision.ops import batched_nms
 from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, CLIPModel, CLIPProcessor
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "openimages"
@@ -24,6 +25,9 @@ CROP_PADDING = 0.3
 # "rim" gives tight boxes on the ring and net; "hoop" often boxes the whole pole and backboard.
 PROMPT = "basketball. basketball rim."
 BOX_THRESHOLD = 0.35
+# Rim boxes are checked by CLIP, so they can use a lower bar: 0.25 found 2.8x as many verified hoops, ~90% real.
+HOOP_BOX_THRESHOLD = 0.25
+DUPLICATE_IOU = 0.5
 TEXT_THRESHOLD = 0.25
 # Batches of 4 overflowed 8 GB of GPU memory on large photos, and Windows then spills into much slower system RAM.
 BATCH_SIZE = 1
@@ -59,6 +63,18 @@ def padded_box(box, padding) -> tuple:
     x1, y1, x2, y2 = box
     pad = max(x2 - x1, y2 - y1) * padding
     return (x1 - pad, y1 - pad, x2 + pad, y2 + pad)
+
+
+def drop_duplicates(boxes) -> list[tuple]:
+    """Keep the best-scoring box where one object was boxed twice (often a rim, and the rim plus backboard).
+
+    `boxes` is a list of (xyxy box, score, category id); returns (box, category id) pairs.
+    """
+    if not boxes:
+        return []
+    corners, scores, categories = zip(*boxes)
+    keep = batched_nms(torch.tensor(corners, dtype=torch.float), torch.tensor(scores, dtype=torch.float), torch.tensor(categories), DUPLICATE_IOU)
+    return [(corners[i], categories[i]) for i in keep.tolist()]
 
 
 def to_coco_annotation(box, category_id, image_id, annotation_id) -> dict:
@@ -110,26 +126,28 @@ def main():
         results = processor.post_process_grounded_object_detection(
             outputs,
             inputs.input_ids,
-            threshold=BOX_THRESHOLD,
+            threshold=HOOP_BOX_THRESHOLD,
             text_threshold=TEXT_THRESHOLD,
             target_sizes=[image.size[::-1] for image in images],
         )
         for path, image, result in zip(batch, images, results):
             boxes = []
-            for box, text in zip(result["boxes"].tolist(), result["text_labels"]):
+            for box, score, text in zip(result["boxes"].tolist(), result["scores"].tolist(), result["text_labels"]):
                 category = category_for(text)
-                if category is not None and is_plausible(box, category, image.width, image.height):
-                    boxes.append((box, category))
-            hoops = [box for box, category in boxes if category == 1]
+                if category is None or (category == 0 and score < BOX_THRESHOLD):
+                    continue
+                if is_plausible(box, category, image.width, image.height):
+                    boxes.append((box, score, category))
+            hoops = [box for box, _, category in boxes if category == 1]
             if hoops:
                 crops = [image.crop(padded_box(box, CROP_PADDING)) for box in hoops]
                 clip_inputs = verifier_processor(text=VERIFY_TEXTS, images=crops, return_tensors="pt", padding=True)
                 probabilities = verifier(**clip_inputs.to(device)).logits_per_image.softmax(-1)
                 hoop_probability = dict(zip(map(tuple, hoops), probabilities[:, :HOOP_TEXT_COUNT].sum(-1).tolist()))
-                kept = [(b, c) for b, c in boxes if c == 0 or hoop_probability[tuple(b)] > VERIFY_MIN_PROBABILITY]
+                kept = [(b, s, c) for b, s, c in boxes if c == 0 or hoop_probability[tuple(b)] > VERIFY_MIN_PROBABILITY]
                 rejected_hoops += len(boxes) - len(kept)
                 boxes = kept
-            annotations = [to_coco_annotation(box, category, 0, 0) for box, category in boxes]
+            annotations = [to_coco_annotation(box, category, 0, 0) for box, category in drop_duplicates(boxes)]
             if not annotations:
                 continue  # Nothing basketball-like found; leave the image out.
             image_id = len(coco["images"])
