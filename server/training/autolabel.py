@@ -8,10 +8,19 @@ from pathlib import Path
 
 import torch
 from PIL import Image, ImageDraw
-from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, CLIPModel, CLIPProcessor
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "openimages"
 LABELER_MODEL = "IDEA-Research/grounding-dino-base"  # Apache-2.0
+# About 70% of Grounding DINO's roughly square rim boxes were balls, shot clocks or logos.
+# CLIP names each cropped rim box; keep it only if it looks like a hoop or backboard.
+# Not used on balls: it rejected tiny blurry balls and a ball inside the rim.
+VERIFIER_MODEL = "openai/clip-vit-large-patch14"  # MIT
+VERIFY_TEXTS = ["a basketball hoop", "a basketball backboard", "a basketball", "a volleyball", "a soccer ball",
+                "a scoreboard", "a clock", "a logo", "a person", "a sign"]
+HOOP_TEXT_COUNT = 2  # the first two texts mean hoop
+VERIFY_MIN_PROBABILITY = 0.5
+CROP_PADDING = 0.3
 # "rim" gives tight boxes on the ring and net; "hoop" often boxes the whole pole and backboard.
 PROMPT = "basketball. basketball rim."
 BOX_THRESHOLD = 0.35
@@ -45,6 +54,13 @@ def is_plausible(box, category_id, image_width, image_height) -> bool:
     return low <= width / height <= high
 
 
+def padded_box(box, padding) -> tuple:
+    """Grow a box by `padding` times its longer side on each edge, so CLIP sees the net and backboard around a rim."""
+    x1, y1, x2, y2 = box
+    pad = max(x2 - x1, y2 - y1) * padding
+    return (x1 - pad, y1 - pad, x2 + pad, y2 + pad)
+
+
 def to_coco_annotation(box, category_id, image_id, annotation_id) -> dict:
     x1, y1, x2, y2 = box
     return {
@@ -71,6 +87,9 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     processor = AutoProcessor.from_pretrained(LABELER_MODEL)
     model = AutoModelForZeroShotObjectDetection.from_pretrained(LABELER_MODEL).to(device).eval()
+    verifier_processor = CLIPProcessor.from_pretrained(VERIFIER_MODEL)
+    verifier = CLIPModel.from_pretrained(VERIFIER_MODEL).to(device).eval()
+    rejected_hoops = 0
     paths = sorted((DATA_DIR / "images").glob("*.jpg"))
     previews = DATA_DIR / "previews_autolabel"
     previews.mkdir(exist_ok=True)
@@ -96,11 +115,21 @@ def main():
             target_sizes=[image.size[::-1] for image in images],
         )
         for path, image, result in zip(batch, images, results):
-            annotations = []
+            boxes = []
             for box, text in zip(result["boxes"].tolist(), result["text_labels"]):
                 category = category_for(text)
                 if category is not None and is_plausible(box, category, image.width, image.height):
-                    annotations.append(to_coco_annotation(box, category, 0, 0))
+                    boxes.append((box, category))
+            hoops = [box for box, category in boxes if category == 1]
+            if hoops:
+                crops = [image.crop(padded_box(box, CROP_PADDING)) for box in hoops]
+                clip_inputs = verifier_processor(text=VERIFY_TEXTS, images=crops, return_tensors="pt", padding=True)
+                probabilities = verifier(**clip_inputs.to(device)).logits_per_image.softmax(-1)
+                hoop_probability = dict(zip(map(tuple, hoops), probabilities[:, :HOOP_TEXT_COUNT].sum(-1).tolist()))
+                kept = [(b, c) for b, c in boxes if c == 0 or hoop_probability[tuple(b)] > VERIFY_MIN_PROBABILITY]
+                rejected_hoops += len(boxes) - len(kept)
+                boxes = kept
+            annotations = [to_coco_annotation(box, category, 0, 0) for box, category in boxes]
             if not annotations:
                 continue  # Nothing basketball-like found; leave the image out.
             image_id = len(coco["images"])
@@ -115,7 +144,7 @@ def main():
 
     (DATA_DIR / "labels.json").write_text(json.dumps(coco))
     counts = {c["name"]: sum(a["category_id"] == c["id"] for a in coco["annotations"]) for c in CATEGORIES}
-    print(f"kept {len(coco['images'])} of {len(paths)} images; boxes: {counts}")
+    print(f"kept {len(coco['images'])} of {len(paths)} images; boxes: {counts}; CLIP rejected {rejected_hoops} hoop boxes")
 
 
 if __name__ == "__main__":

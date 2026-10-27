@@ -1,7 +1,7 @@
 """Fine-tune RT-DETRv2 on the auto-labeled ball/hoop images.
 
 Run from server/: python -m training.train
-The best model (lowest validation loss) is saved to data/models/ball-hoop-v1; use it with
+The best model (lowest validation loss) is saved to data/models/ball-hoop-v2; use it with
 DETECTOR_MODEL=<that folder>.
 """
 
@@ -18,8 +18,9 @@ from transformers import AutoImageProcessor, AutoModelForObjectDetection
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 BASE_MODEL = "PekingU/rtdetr_v2_r18vd"
-OUTPUT_DIR = DATA_DIR / "models" / "ball-hoop-v1"
-EPOCHS = 30
+OUTPUT_DIR = DATA_DIR / "models" / "ball-hoop-v2"
+# The first run (30 epochs) was best at epoch 3, then overfit the noisy labels.
+EPOCHS = 10
 BATCH_SIZE = 8
 LEARNING_RATE = 5e-5
 GRADIENT_CLIP = 0.1
