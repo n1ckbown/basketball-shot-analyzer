@@ -14,10 +14,11 @@ Most of our code is written by AI, so these rules exist to keep the project work
 
 - **What we're building:** A phone app that records basketball shooting sessions, then analyzes the video to count makes and misses and give feedback on each shot.
 - **Stack:** Mobile app in Expo (React Native) for iPhone and Android in `app/`. Analysis server in Python (FastAPI, later OpenCV) in `server/`. No database yet.
-- **Install:** `python -m venv .venv`, activate it, then `pip install -r server/requirements.txt`
-- **Run:** `uvicorn app.main:app --app-dir server --reload`
-- **Test:** `python -m pytest`
-- **Lint / format:** `ruff check server`
+- **Install:** server: `python -m venv .venv`, activate it, then `pip install -r server/requirements.txt`. App: `cd app` then `npm install`.
+- **Run:** server: `uvicorn app.main:app --app-dir server --reload`. App: `cd app` then `npx expo start`, and scan the QR code with Expo Go.
+- **Test:** server: `python -m pytest`. App: `cd app` then `npm test`.
+- **Lint / format:** server: `ruff check server`. App: `cd app` then `npm run lint` and `npm run typecheck`.
+- **App-specific rules:** also read `app/AGENTS.md` (Expo guidance: check the versioned Expo docs, use `npx expo install` for packages).
 - **Who owns what:** see the ownership table in `README.md`
 
 ---
@@ -99,9 +100,9 @@ To start a new branch: `git switch main`, `git pull origin main`, then `git swit
 
 Run these **before every commit and again before every push**:
 
-1. `ruff check server` passes with no errors.
-2. `python -m pytest` passes, with **all** tests green.
-3. The run command from Section 0 starts the app and the feature you changed actually works (skip only if there is no app yet, and say so).
+1. Lint passes with no errors: `ruff check server` for the server; `npm run lint` and `npm run typecheck` in `app/` for the app.
+2. All tests pass: `python -m pytest` for the server; `npm test` in `app/` for the app.
+3. The run command from Section 0 starts and the feature you changed actually works. For the app, also run `npx expo export --platform android --platform ios --output-dir <temp folder>` to prove it bundles; camera and other device features must be checked by the human on a real phone before merging.
 
 Rules for tests:
 - New behavior gets a new test. A bug fix gets a test that would have caught the bug.
