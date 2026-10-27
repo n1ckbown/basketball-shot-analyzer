@@ -1,4 +1,6 @@
-# Hoops
+# Basketball Shot Analyzer
+
+Working name; to be replaced with a more marketable one before release.
 
 Record your basketball shooting on your phone. The app counts makes and misses and gives feedback on each shot.
 

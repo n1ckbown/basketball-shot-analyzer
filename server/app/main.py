@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="Hoops analysis server")
+app = FastAPI(title="Basketball Shot Analyzer server")
 
 
 @app.get("/health")
