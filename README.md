@@ -37,6 +37,14 @@ python -m app.detection ..\data\videos\session1.mov
 
 This prints the ball and hoop found in each frame and how many frames had each. The model (`DETECTOR_MODEL`, default `PekingU/rtdetr_v2_r18vd`, Apache-2.0) downloads on first run. Put local videos and datasets in `data/`, which is kept out of git.
 
+To list every shot with make or miss instead (needs the fine-tuned model, see below):
+
+```
+python -m app.shots ..\data\videos\session1.mov
+```
+
+This assumes a still camera with the hoop in view. On a 9-minute side-view test video it found all 35 shots and called 33 of them correctly. From a pure side view, a ball that drops just behind the net can look like a make.
+
 ### Training the ball/hoop detector
 
 The pretrained model has no hoop class, so we fine-tune it. Three steps, run from `server/` (a GPU is strongly recommended):
@@ -68,8 +76,8 @@ Each step is one pull request.
 1. Project scaffold: repo, rules, server skeleton, tests (done)
 2. App: record a session with the phone camera and save it to the photo library (done)
 3. Server: upload endpoint that accepts a video and returns a job ID (done: `POST /videos`, saved to `UPLOAD_DIR`, default `uploads/`)
-4. Server: detect the ball and hoop in each frame (pipeline in `server/app/detection.py` and a fine-tuned detector from `server/training/`; next: check it on real session videos)
-5. Server: track shots and decide make or miss, with a count per session
+4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
+5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
 6. App: upload a session and show makes, misses and shooting percentage
 7. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
