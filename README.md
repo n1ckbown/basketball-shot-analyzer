@@ -36,7 +36,7 @@ Each step is one pull request.
 
 1. Project scaffold: repo, rules, server skeleton, tests (done)
 2. App: record a session with the phone camera and save it to the photo library (done)
-3. Server: upload endpoint that accepts a video and returns a job ID
+3. Server: upload endpoint that accepts a video and returns a job ID (done: `POST /videos`, saved to `UPLOAD_DIR`, default `uploads/`)
 4. Server: detect the ball and hoop in each frame
 5. Server: track shots and decide make or miss, with a count per session
 6. App: upload a session and show makes, misses and shooting percentage
