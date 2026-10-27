@@ -4,7 +4,9 @@ This file applies to **every AI tool** used on this repo (Codex, Claude Code, Co
 
 Most of our code is written by AI, so these rules exist to keep the project working, readable, and free of merge disasters.
 
-**The short version:** work on a branch, stay in scope, pass the tests, open a pull request, and let a human approve and merge it.
+**The short version:** work on a branch, stay in scope, pass the tests, open a pull request, and merge it only after the testing gate passes.
+
+**Solo project:** one human owns this repo. The AI opens and merges its own pull requests (Section 8); there is no second reviewer.
 
 ---
 
@@ -39,7 +41,7 @@ Most of our code is written by AI, so these rules exist to keep the project work
 - Amend or rewrite commits that have already been pushed.
 - Delete branches or files you didn't create without the human's approval.
 - Skip checks with `--no-verify`.
-- Merge, approve, or enable auto-merge on any pull request. Humans approve and merge.
+- Merge a pull request before the testing gate passes, or enable auto-merge.
 
 **Always**
 - Run `git status` and review the diff before every commit.
@@ -97,9 +99,9 @@ To start a new branch: `git switch main`, `git pull origin main`, then `git swit
 
 Run these **before every commit and again before every push**:
 
-1. `[LINT_COMMAND]` passes with no errors (skip only if no linter is set up yet, and say so).
+1. `ruff check server` passes with no errors.
 2. `python -m pytest` passes, with **all** tests green.
-3. `[RUN_COMMAND]` starts the app and the feature you changed actually works (skip only if there is no app yet, and say so).
+3. The run command from Section 0 starts the app and the feature you changed actually works (skip only if there is no app yet, and say so).
 
 Rules for tests:
 - New behavior gets a new test. A bug fix gets a test that would have caught the bug.
@@ -134,7 +136,7 @@ The same checks should run on every pull request (CI). A pull request with faili
 
 ## 8. Pull requests
 
-**You may open pull requests. You may never approve or merge them.**
+**You open your own pull requests and merge them once the testing gate passes.**
 
 When the task is finished and the testing gate in Section 5 passes:
 
@@ -146,7 +148,8 @@ When the task is finished and the testing gate in Section 5 passes:
    - **Why** it changed
    - **How it was tested** (the exact commands and real results)
    - Anything risky, unfinished, or touching shared files
-5. Print the pull request link, then **stop**. Do not merge, approve, or enable auto-merge, and do not push more commits unless the human asks.
+5. Merge it with `gh pr merge --merge --delete-branch` (a merge commit, not squash or rebase).
+6. Switch to `main`, pull, and print the pull request link in your summary.
 
 More rules:
 - Do not open a pull request if checks are failing.
@@ -154,10 +157,7 @@ More rules:
 - If `gh` isn't installed or isn't signed in, don't try to fix it or ask for tokens. Give the human the link GitHub prints after the push (or tell them to click **Compare & pull request** on github.com).
 - If your tool asks permission to run `gh`, that is fine. Wait for the human to approve it.
 
-**Review and merge (humans):**
-- A teammate who did **not** write the change opens **Files changed**, confirms only the expected files are listed, reads the "How it was tested" section, and runs the tests if unsure.
-- That teammate approves and clicks **Merge pull request**. Nobody merges their own work.
-- After merging, everyone switches to `main` and pulls.
+**Review (human):** the owner can read any merged pull request on GitHub and ask for a fix or a revert in a new pull request.
 
 ---
 
@@ -186,9 +186,8 @@ More rules:
 ## 11. Rules for the humans directing the AI
 
 - Tell the AI which branch to use and what the one task is. One task per prompt.
-- **Read the diff before you approve.** You are responsible for what gets merged.
-- Run the app yourself before merging. Passing tests is not the same as working.
-- Never merge your own pull request.
+- Skim each merged pull request. You are responsible for what is on `main`.
+- Run the app yourself after each stage. Passing tests is not the same as working.
 - Never let two people's AI tools edit the same file at the same time. Claim files in the ownership table first.
 - Keep sessions focused. If the AI starts wandering into unrelated files, stop it and restate the task.
 - Do the GitHub login yourself (`gh auth login`). Don't hand the AI your passwords or tokens.
@@ -206,4 +205,4 @@ More rules:
 - [ ] No secrets or junk files committed
 - [ ] `main` pulled into the branch, no conflicts
 - [ ] Pull request opened with what, why, and how it was tested
-- [ ] A different human approves and merges it
+- [ ] Pull request merged with `gh pr merge --merge`, local `main` pulled
