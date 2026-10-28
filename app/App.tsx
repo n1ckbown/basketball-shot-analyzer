@@ -70,6 +70,7 @@ export default function App() {
       setAnalysis('Uploading… 0%');
       const upload = await new File(uri).upload(`${server}/videos`, {
         uploadType: UploadType.MULTIPART,
+        fieldName: 'file', // The server reads this field; the native default is the file name, not 'file' as documented.
         // iPhones record .mov and Android phones .mp4; the server accepts only these two types.
         mimeType: uri.toLowerCase().endsWith('.mp4') ? 'video/mp4' : 'video/quicktime',
         // On the phone these arrive as BigInt despite the number type, and BigInt can't mix with numbers.

@@ -120,7 +120,7 @@ test('uploads the session, waits for analysis and shows makes and misses', async
   await recordOneSession();
 
   expect(File).toHaveBeenCalledWith('file:///cache/session.mov');
-  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ mimeType: 'video/quicktime' }));
+  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ fieldName: 'file', mimeType: 'video/quicktime' }));
   expect(await screen.findByText(/Finding your shots/)).toBeTruthy();
 
   expect(await screen.findByRole('header', { name: '2 of 3 made (67%)' }, { timeout: 5000 })).toBeTruthy();
@@ -154,7 +154,7 @@ test('uploads a video picked from the library and shows makes and misses', async
 
   expect(launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['videos'] });
   expect(File).toHaveBeenCalledWith('file:///cache/old-session.mp4');
-  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ mimeType: 'video/mp4' }));
+  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ fieldName: 'file', mimeType: 'video/mp4' }));
   expect(await screen.findByRole('header', { name: '2 of 3 made (67%)' })).toBeTruthy();
   expect(Asset.create).not.toHaveBeenCalled();
 });
