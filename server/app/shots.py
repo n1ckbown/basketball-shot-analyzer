@@ -122,12 +122,14 @@ def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Sh
 
 
 def analyze_video(path, detector) -> dict:
-    """Shots in a video file as JSON-ready data: totals, then the time in seconds and make or miss of each shot."""
+    """Shots in a video file as JSON-ready data: totals, the video length, then the time and result of each shot."""
     fps = cv2.VideoCapture(str(path)).get(cv2.CAP_PROP_FPS)
-    shots = find_shots(detect_video(path, detector), fps)
+    frames = detect_video(path, detector)
+    shots = find_shots(frames, fps)
     return {
         "attempts": len(shots),
         "makes": sum(s.made for s in shots),
+        "duration": round(len(frames) / fps, 1),
         "shots": [{"time": round(s.frame / fps, 1), "made": s.made} for s in shots],
     }
 
