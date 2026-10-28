@@ -72,8 +72,9 @@ export default function App() {
         uploadType: UploadType.MULTIPART,
         // iPhones record .mov and Android phones .mp4; the server accepts only these two types.
         mimeType: uri.toLowerCase().endsWith('.mp4') ? 'video/mp4' : 'video/quicktime',
+        // On the phone these arrive as BigInt despite the number type, and BigInt can't mix with numbers.
         onProgress: ({ bytesSent, totalBytes }) =>
-          setAnalysis(`Uploading… ${Math.min(99, Math.floor((100 * bytesSent) / totalBytes))}%`),
+          setAnalysis(`Uploading… ${Math.min(99, Math.floor((100 * Number(bytesSent)) / Number(totalBytes)))}%`),
       });
       if (upload.status !== 201) throw new Error(`upload failed (HTTP ${upload.status})`);
       const { job_id: jobId } = JSON.parse(upload.body);

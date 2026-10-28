@@ -64,7 +64,10 @@ function mockPermissions(camera: boolean, media: boolean) {
 function mockServer(...jobStates: object[]) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { upload } = require('expo-file-system');
-  upload.mockResolvedValue({ status: 201, body: JSON.stringify({ job_id: 'abc123' }), headers: {} });
+  upload.mockImplementation(async (_url: string, { onProgress }: { onProgress: (p: object) => void }) => {
+    onProgress({ bytesSent: BigInt(50), totalBytes: BigInt(100) }); // the phone reports BigInt, not number
+    return { status: 201, body: JSON.stringify({ job_id: 'abc123' }), headers: {} };
+  });
   const fetchMock = jest.fn();
   for (const state of jobStates) fetchMock.mockResolvedValueOnce({ json: async () => state });
   globalThis.fetch = fetchMock;
