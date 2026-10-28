@@ -1,5 +1,5 @@
 from app.detection import Detection
-from app.shots import check_setup, find_shots, locate_rim
+from app.shots import arc_height, check_setup, find_shots, locate_rim
 
 # Rim at x 100-200, y 100-150; the backboard behind it scores higher, as in real footage.
 BACKBOARD = Detection("hoop", 0.9, (120, 20, 220, 140))
@@ -76,3 +76,20 @@ def test_setup_check_is_unsure_without_a_rim_shaped_box():
     rim = Detection("hoop", 0.4, (100, 200, 200, 250))
     lookalike_near_the_top = Detection("hoop", 0.5, (600, 20, 700, 40))  # more confident, but far from the hoop
     assert check_setup([BACKBOARD, rim, lookalike_near_the_top], 1000)["room_above"] is True
+
+
+def flight(ball_width, times):
+    """A ball 1 m above the rim top at t=0.5 s, filmed at 1 cm per pixel, at 30 fps."""
+    pixels_per_second_squared = 9.81 / 2 / 0.01
+    return {round(t * 30): (150, 0 + pixels_per_second_squared * (t - 0.5) ** 2, ball_width) for t in times}
+
+
+def test_arc_is_measured_with_gravity_as_the_ruler():
+    whole_flight = [i / 30 for i in range(31)]
+    rim = (100, 100, 200, 150)
+
+    assert arc_height(30, flight(26, whole_flight), rim, fps=30) == 3.3  # 1 m in feet
+    # The ball's size says 2.5 times closer than gravity does: not a free flight, so no arc.
+    assert arc_height(30, flight(60, whole_flight), rim, fps=30) is None
+    # Only the way down was seen: the top can't be trusted.
+    assert arc_height(30, flight(26, [i / 30 for i in range(15, 31)]), rim, fps=30) is None
