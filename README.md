@@ -27,7 +27,7 @@ uvicorn app.main:app --app-dir server --host 0.0.0.0
 ```
 
 - `POST /videos` (form field `file`, MP4 or MOV) saves the video, queues it for analysis and returns `{"job_id": ...}`. Videos are analyzed one at a time.
-- `GET /videos/{job_id}` returns `{"status": "processing"}` until analysis finishes. Then it returns `{"status": "done", "attempts": 35, "makes": 11, "shots": [{"time": 18.1, "made": true}, ...]}`, where `time` is seconds into the video. If analysis fails it returns `{"status": "failed", "error": ...}`.
+- `GET /videos/{job_id}` returns `{"status": "processing"}` until analysis finishes. Then it returns `{"status": "done", "attempts": 35, "makes": 11, "duration": 536.7, "shots": [{"time": 18.1, "made": true}, ...]}`, where `duration` is the video length and `time` is when the ball reached the rim, both in seconds. If analysis fails it returns `{"status": "failed", "error": ...}`.
 
 ### Using an NVIDIA GPU (recommended for detection)
 
@@ -97,7 +97,8 @@ Each step is one pull request.
 4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
 6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; tested on a real phone)
-7. Server + app: per-shot feedback (release angle, arc, left/right miss)
+7. App: new look (in progress: Home with saved sessions and a redesigned results screen are done, under `app/src/app/`; next: setup check with camera flip, then the analyzing and history screens)
+8. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
 ## Ownership
 

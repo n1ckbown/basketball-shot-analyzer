@@ -1,10 +1,11 @@
-import { render, screen, userEvent } from '@testing-library/react-native';
+import { screen, userEvent } from '@testing-library/react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { File } from 'expo-file-system';
 import { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
 import { Asset, usePermissions } from 'expo-media-library';
+import { renderRouter } from 'expo-router/testing-library';
 
-import App from './App';
+jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 
 jest.mock('expo-camera', () => {
   // jest.mock factories are hoisted above imports, so they must require().
@@ -35,9 +36,38 @@ jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(),
 }));
 
+// In-memory files, so saved sessions persist within a test.
 jest.mock('expo-file-system', () => {
+  const files = new Map<string, string>();
   const upload = jest.fn();
-  return { File: jest.fn(() => ({ upload })), UploadType: { MULTIPART: 1 }, upload };
+  class MockFile {
+    uri: string;
+    constructor(...parts: (string | { uri: string })[]) {
+      this.uri = parts.map((part) => (typeof part === 'string' ? part : part.uri)).join('/');
+    }
+    get exists() {
+      return files.has(this.uri);
+    }
+    create() {
+      files.set(this.uri, '');
+    }
+    async text() {
+      return files.get(this.uri);
+    }
+    async write(content: string) {
+      files.set(this.uri, content);
+    }
+    upload(...args: unknown[]) {
+      return upload(...args);
+    }
+  }
+  return {
+    File: jest.fn((...parts) => new MockFile(...parts)),
+    Paths: { document: { uri: 'file:///documents' } },
+    UploadType: { MULTIPART: 1 },
+    files,
+    upload,
+  };
 });
 
 const SERVER = 'http://192.168.1.20:8000';
@@ -45,12 +75,14 @@ const DONE = {
   status: 'done',
   attempts: 3,
   makes: 2,
+  duration: 95.2,
   shots: [
     { time: 18.1, made: true },
     { time: 28.0, made: false },
     { time: 70.4, made: true },
   ],
 };
+const APP = './src/app';
 
 function mockPermissions(camera: boolean, media: boolean) {
   const requestCamera = jest.fn();
@@ -74,20 +106,42 @@ function mockServer(...jobStates: object[]) {
   return { upload, fetchMock };
 }
 
+function mockPickedVideo(granted: boolean, picked: object) {
+  jest.mocked(requestMediaLibraryPermissionsAsync).mockResolvedValue({ granted } as never);
+  jest.mocked(launchImageLibraryAsync).mockResolvedValue(picked as never);
+}
+
+function savedSessions() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const json = require('expo-file-system').files.get('file:///documents/sessions.json');
+  return json ? JSON.parse(json) : [];
+}
+
 async function recordOneSession(user = userEvent.setup()) {
-  await render(<App />);
-  await user.press(screen.getByRole('button', { name: 'Start recording' }));
+  await renderRouter(APP);
+  await user.press(screen.getByRole('button', { name: 'Start a session' }));
+  await user.press(await screen.findByRole('button', { name: 'Start recording' }));
   await user.press(await screen.findByRole('button', { name: 'Stop recording' }));
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('expo-file-system').files.clear();
   process.env.EXPO_PUBLIC_SERVER_URL = SERVER;
+});
+
+test('home invites a first session when nothing is saved yet', async () => {
+  await renderRouter(APP);
+
+  expect(screen.getByText('No sessions yet')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Start a session' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Upload a video' })).toBeTruthy();
 });
 
 test('asks for camera access before showing the camera', async () => {
   const requestCamera = mockPermissions(false, false);
-  await render(<App />);
+  await renderRouter(APP, { initialUrl: '/record' });
 
   await userEvent.setup().press(screen.getByRole('button', { name: 'Allow camera' }));
 
@@ -95,13 +149,39 @@ test('asks for camera access before showing the camera', async () => {
   expect(screen.queryByRole('button', { name: 'Start recording' })).toBeNull();
 });
 
-test('saves the recorded video to the photo library', async () => {
+// Real timers: the app waits one 3-second poll before the result arrives (fake timers hung this test).
+test('records, saves, analyzes and shows the session results', async () => {
   mockPermissions(true, true);
-  mockServer({ status: 'failed', error: 'stop here' });
+  const { upload, fetchMock } = mockServer({ status: 'processing' }, DONE);
   await recordOneSession();
 
-  expect(await screen.findByText('Saved to your photo library.')).toBeTruthy();
   expect(Asset.create).toHaveBeenCalledWith('file:///cache/session.mov');
+  expect(File).toHaveBeenCalledWith('file:///cache/session.mov');
+  expect(upload).toHaveBeenCalledWith(
+    `${SERVER}/videos`,
+    expect.objectContaining({ fieldName: 'file', mimeType: 'video/quicktime' }),
+  );
+  expect(await screen.findByText('Saved to your photo library.')).toBeTruthy();
+
+  expect(await screen.findByRole('image', { name: '67% made, 2 of 3' }, { timeout: 5000 })).toBeTruthy();
+  expect(fetchMock).toHaveBeenCalledWith(`${SERVER}/videos/abc123`, expect.anything());
+  expect(screen.getByText('1:35 session')).toBeTruthy();
+  expect(screen.getByRole('image', { name: 'Makes at 0:18, 1:10' })).toBeTruthy();
+  expect(screen.getByText('0:28')).toBeTruthy();
+  expect(savedSessions()).toEqual([expect.objectContaining({ attempts: 3, makes: 2, duration: 95.2 })]);
+}, 15000);
+
+test('done on the results returns home, which lists the saved session', async () => {
+  mockPermissions(true, true);
+  mockServer(DONE);
+  const user = userEvent.setup();
+  await recordOneSession(user);
+  await screen.findByRole('image', { name: '67% made, 2 of 3' });
+
+  await user.press(screen.getByRole('button', { name: 'Done' }));
+
+  expect(await screen.findByRole('button', { name: 'Latest session: 67%, 2 of 3 made' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Today: 2 of 3 made, 67%' })).toBeTruthy();
 });
 
 test('tells the user when photo library access is denied', async () => {
@@ -113,73 +193,14 @@ test('tells the user when photo library access is denied', async () => {
   expect(Asset.create).not.toHaveBeenCalled();
 });
 
-// Real timers: the app waits one 3-second poll before the result arrives (fake timers hung this test).
-test('uploads the session, waits for analysis and shows makes and misses', async () => {
-  mockPermissions(true, true);
-  const { upload, fetchMock } = mockServer({ status: 'processing' }, DONE);
-  await recordOneSession();
-
-  expect(File).toHaveBeenCalledWith('file:///cache/session.mov');
-  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ fieldName: 'file', mimeType: 'video/quicktime' }));
-  expect(await screen.findByText(/Finding your shots/)).toBeTruthy();
-
-  expect(await screen.findByRole('header', { name: '2 of 3 made (67%)' }, { timeout: 5000 })).toBeTruthy();
-  expect(fetchMock).toHaveBeenCalledWith(`${SERVER}/videos/abc123`);
-  expect(screen.getByText('0:18  Make')).toBeTruthy();
-  expect(screen.getByText('0:28  Miss')).toBeTruthy();
-  expect(screen.getByText('1:10  Make')).toBeTruthy();
-}, 15000);
-
-test('reports a failed analysis and lets the user record again', async () => {
+test('reports a failed analysis without saving a session', async () => {
   mockPermissions(true, true);
   mockServer({ status: 'failed', error: 'Could not open video' });
   await recordOneSession();
 
-  expect(await screen.findByText("Couldn't analyze: Could not open video")).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Start recording' })).toBeEnabled();
-});
-
-function mockPickedVideo(granted: boolean, picked: object) {
-  jest.mocked(requestMediaLibraryPermissionsAsync).mockResolvedValue({ granted } as never);
-  jest.mocked(launchImageLibraryAsync).mockResolvedValue(picked as never);
-}
-
-test('uploads a video picked from the library and shows makes and misses', async () => {
-  mockPermissions(true, true);
-  mockPickedVideo(true, { canceled: false, assets: [{ uri: 'file:///cache/old-session.mp4' }] });
-  const { upload } = mockServer(DONE);
-  await render(<App />);
-
-  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
-
-  expect(launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['videos'] });
-  expect(File).toHaveBeenCalledWith('file:///cache/old-session.mp4');
-  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ fieldName: 'file', mimeType: 'video/mp4' }));
-  expect(await screen.findByRole('header', { name: '2 of 3 made (67%)' })).toBeTruthy();
-  expect(Asset.create).not.toHaveBeenCalled();
-});
-
-test('does nothing when the user cancels the video picker', async () => {
-  mockPermissions(true, true);
-  mockPickedVideo(true, { canceled: true, assets: null });
-  const { upload } = mockServer();
-  await render(<App />);
-
-  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
-
-  expect(launchImageLibraryAsync).toHaveBeenCalled();
-  expect(upload).not.toHaveBeenCalled();
-});
-
-test('explains when photo library access is denied for picking a video', async () => {
-  mockPermissions(true, true);
-  mockPickedVideo(false, { canceled: true, assets: null });
-  await render(<App />);
-
-  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
-
-  expect(await screen.findByText("Can't open videos: allow photo library access in Settings.")).toBeTruthy();
-  expect(launchImageLibraryAsync).not.toHaveBeenCalled();
+  expect(await screen.findByText('Could not open video')).toBeTruthy();
+  expect(screen.getByRole('header', { name: "Couldn't analyze" })).toBeTruthy();
+  expect(savedSessions()).toEqual([]);
 });
 
 test('explains when no server address is set', async () => {
@@ -190,4 +211,40 @@ test('explains when no server address is set', async () => {
 
   expect(await screen.findByText(/no server address set/)).toBeTruthy();
   expect(upload).not.toHaveBeenCalled();
+});
+
+test('uploads a video picked from the library and shows its results', async () => {
+  mockPickedVideo(true, { canceled: false, assets: [{ uri: 'file:///cache/old-session.mp4' }] });
+  const { upload } = mockServer(DONE);
+  await renderRouter(APP);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['videos'] });
+  expect(await screen.findByRole('image', { name: '67% made, 2 of 3' })).toBeTruthy();
+  expect(File).toHaveBeenCalledWith('file:///cache/old-session.mp4');
+  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ mimeType: 'video/mp4' }));
+  expect(Asset.create).not.toHaveBeenCalled();
+});
+
+test('does nothing when the user cancels the video picker', async () => {
+  mockPickedVideo(true, { canceled: true, assets: null });
+  const { upload } = mockServer();
+  await renderRouter(APP);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(launchImageLibraryAsync).toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+  expect(screen).toHavePathname('/');
+});
+
+test('explains when photo library access is denied for picking a video', async () => {
+  mockPickedVideo(false, { canceled: true, assets: null });
+  await renderRouter(APP);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(await screen.findByText("Can't open videos: allow photo library access in Settings.")).toBeTruthy();
+  expect(launchImageLibraryAsync).not.toHaveBeenCalled();
 });

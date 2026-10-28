@@ -2,6 +2,7 @@
   "expo": {
     "name": "Basketball Shot Analyzer",
     "slug": "basketball-shot-analyzer",
+    "scheme": "shotanalyzer",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -34,7 +35,9 @@
         {
           "photosPermission": "Allow $(PRODUCT_NAME) to open the videos you choose to analyze.",
           "savePhotosPermission": "Allow $(PRODUCT_NAME) to save your recorded sessions to your photo library.",
-          "granularPermissions": ["video"]
+          "granularPermissions": [
+            "video"
+          ]
         }
       ],
       [
@@ -43,7 +46,8 @@
           "photosPermission": "Allow $(PRODUCT_NAME) to open the videos you choose to analyze.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-router"
     ]
   }
 }
