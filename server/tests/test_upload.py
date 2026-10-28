@@ -92,3 +92,13 @@ def test_unknown_or_malformed_job_ids_are_not_found(upload_dir):
     assert client.get(f"/videos/{'a' * 32}").status_code == 404
     assert client.get("/videos/secret").status_code == 404
     assert client.get("/videos/..%2Fsecret").status_code == 404
+
+
+def test_videos_left_unanalyzed_by_a_restart_are_analyzed_on_startup(upload_dir):
+    (upload_dir / f"{'1' * 32}.mov").write_bytes(b"video")
+    (upload_dir / f"{'2' * 32}.mp4").write_bytes(b"video")
+    (upload_dir / f"{'2' * 32}.json").write_text('{"status": "done"}')
+
+    with TestClient(main.app) as restarted:
+        assert restarted.get(f"/videos/{'1' * 32}").json() == {"status": "done", **RESULT}
+        assert restarted.get(f"/videos/{'2' * 32}").json() == {"status": "done"}  # already analyzed: left alone
