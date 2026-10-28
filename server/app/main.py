@@ -5,6 +5,7 @@ import re
 import shutil
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -14,10 +15,7 @@ MAX_UPLOAD_BYTES = 1024**3  # 1 GB, roughly 10 minutes of 1080p phone video
 VIDEO_EXTENSIONS = {"video/mp4": ".mp4", "video/quicktime": ".mov"}
 JOB_ID = re.compile(r"[0-9a-f]{32}")
 
-app = FastAPI(title="Basketball Shot Analyzer server")
 # One video at a time: they share the GPU, and a second job would only slow the first.
-# shortcut: queued jobs are lost if the server restarts (their status stays "processing"); re-queue unfinished
-# videos on startup once the server runs unattended.
 worker = ThreadPoolExecutor(1)
 
 
@@ -43,6 +41,25 @@ def process(video: Path):
     partial = video.with_suffix(".json.part")
     partial.write_text(json.dumps(result))
     partial.replace(video.with_suffix(".json"))  # Readers never see a half-written file.
+
+
+def requeue_unfinished():
+    """Queue videos that were uploaded but not analyzed before the server last stopped, oldest first."""
+    if not UPLOAD_DIR.exists():
+        return
+    videos = [p for p in UPLOAD_DIR.iterdir()
+              if p.suffix in VIDEO_EXTENSIONS.values() and not p.with_suffix(".json").exists()]
+    for video in sorted(videos, key=lambda p: p.stat().st_mtime):
+        worker.submit(process, video)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    requeue_unfinished()
+    yield
+
+
+app = FastAPI(title="Basketball Shot Analyzer server", lifespan=lifespan)
 
 
 @app.get("/health")
