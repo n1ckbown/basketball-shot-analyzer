@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -92,3 +94,19 @@ def test_unknown_or_malformed_job_ids_are_not_found(upload_dir):
     assert client.get(f"/videos/{'a' * 32}").status_code == 404
     assert client.get("/videos/secret").status_code == 404
     assert client.get("/videos/..%2Fsecret").status_code == 404
+
+
+def test_setup_check_runs_the_photo_through_the_detector(monkeypatch):
+    seen = []
+    monkeypatch.setattr(main, "check_setup", lambda image: seen.append(image.shape) or {"hoop": True})
+    _, jpeg = cv2.imencode(".jpg", np.zeros((90, 160, 3), np.uint8))
+
+    response = client.post("/setup-check", files={"file": ("photo.jpg", jpeg.tobytes(), "image/jpeg")})
+
+    assert response.json() == {"hoop": True}
+    assert seen == [(90, 160, 3)]
+
+
+def test_setup_check_rejects_files_that_are_not_photos():
+    assert client.post("/setup-check", files={"file": ("a.txt", b"hi", "text/plain")}).status_code == 415
+    assert client.post("/setup-check", files={"file": ("a.jpg", b"not a jpeg", "image/jpeg")}).status_code == 400

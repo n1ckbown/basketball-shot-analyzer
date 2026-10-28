@@ -1,4 +1,4 @@
-import { screen, userEvent } from '@testing-library/react-native';
+import { screen, userEvent, waitFor } from '@testing-library/react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { File } from 'expo-file-system';
 import { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
@@ -12,13 +12,17 @@ jest.mock('expo-camera', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { useEffect, useImperativeHandle } = require('react');
   let finishRecording: (video: { uri: string }) => void;
+  const shown = { facing: '' };
   return {
     useCameraPermissions: jest.fn(),
-    // Fake camera: ready on mount, and recordAsync resolves when stopRecording is called.
-    CameraView: ({ ref, onCameraReady }: { ref: unknown; onCameraReady?: () => void }) => {
+    shown,
+    // Fake camera: ready on mount, recordAsync resolves when stopRecording is called, photos are instant.
+    CameraView: ({ ref, onCameraReady, facing }: { ref: unknown; onCameraReady?: () => void; facing: string }) => {
+      shown.facing = facing;
       useImperativeHandle(ref, () => ({
         recordAsync: () => new Promise((resolve) => (finishRecording = resolve)),
         stopRecording: () => finishRecording({ uri: 'file:///cache/session.mov' }),
+        takePictureAsync: async () => ({ uri: 'file:///cache/photo.jpg' }),
       }));
       useEffect(() => onCameraReady?.(), [onCameraReady]);
       return null;
@@ -57,6 +61,9 @@ jest.mock('expo-file-system', () => {
     async write(content: string) {
       files.set(this.uri, content);
     }
+    delete() {
+      files.delete(this.uri);
+    }
     upload(...args: unknown[]) {
       return upload(...args);
     }
@@ -83,6 +90,9 @@ const DONE = {
   ],
 };
 const APP = './src/app';
+const SETUP_OK = { hoop: true, room_above: true, close_enough: true };
+// Answers to the camera's setup checks, in order; the last one repeats.
+let setupAnswers: object[] = [SETUP_OK];
 
 function mockPermissions(camera: boolean, media: boolean) {
   const requestCamera = jest.fn();
@@ -96,7 +106,11 @@ function mockPermissions(camera: boolean, media: boolean) {
 function mockServer(...jobStates: object[]) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { upload } = require('expo-file-system');
-  upload.mockImplementation(async (_url: string, { onProgress }: { onProgress: (p: object) => void }) => {
+  upload.mockImplementation(async (url: string, { onProgress }: { onProgress: (p: object) => void }) => {
+    if (url.endsWith('/setup-check')) {
+      const answer = setupAnswers.length > 1 ? setupAnswers.shift() : setupAnswers[0];
+      return { status: 200, body: JSON.stringify(answer), headers: {} };
+    }
     onProgress({ bytesSent: BigInt(50), totalBytes: BigInt(100) }); // the phone reports BigInt, not number
     return { status: 201, body: JSON.stringify({ job_id: 'abc123' }), headers: {} };
   });
@@ -128,6 +142,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   require('expo-file-system').files.clear();
+  setupAnswers = [SETUP_OK];
   process.env.EXPO_PUBLIC_SERVER_URL = SERVER;
 });
 
@@ -209,7 +224,8 @@ test('explains when no server address is set', async () => {
   delete process.env.EXPO_PUBLIC_SERVER_URL;
   await recordOneSession();
 
-  expect(await screen.findByText(/no server address set/)).toBeTruthy();
+  expect(await screen.findByRole('header', { name: "Couldn't analyze" })).toBeTruthy();
+  expect(screen.getByText(/no server address set/)).toBeTruthy();
   expect(upload).not.toHaveBeenCalled();
 });
 
@@ -247,4 +263,47 @@ test('explains when photo library access is denied for picking a video', async (
 
   expect(await screen.findByText("Can't open videos: allow photo library access in Settings.")).toBeTruthy();
   expect(launchImageLibraryAsync).not.toHaveBeenCalled();
+});
+
+test('the setup panel says what to fix', async () => {
+  mockPermissions(true, true);
+  mockServer();
+  setupAnswers = [{ hoop: true, room_above: false, close_enough: true }];
+  await renderRouter(APP, { initialUrl: '/record' });
+
+  expect(await screen.findByText("Tilt the phone down a little so there's space above the rim.")).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Set up your shot' })).toBeTruthy();
+  expect(screen.getByLabelText('Hoop in view: yes')).toBeTruthy();
+  expect(screen.getByLabelText('Room above the rim: not yet')).toBeTruthy();
+});
+
+// Real timers: the second check comes 3 seconds after the first.
+test('a photo that cannot judge the rim keeps the last clear answer', async () => {
+  mockPermissions(true, true);
+  const { upload } = mockServer();
+  setupAnswers = [SETUP_OK, { hoop: true, room_above: null, close_enough: null }];
+  await renderRouter(APP, { initialUrl: '/record' });
+  expect(await screen.findByRole('header', { name: 'Ready to record' })).toBeTruthy();
+
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(2), { timeout: 5000 });
+
+  expect(screen.getByRole('header', { name: 'Ready to record' })).toBeTruthy();
+  expect(screen.getByLabelText('Room above the rim: yes')).toBeTruthy();
+}, 15000);
+
+test('flips to the front camera before recording, not during', async () => {
+  mockPermissions(true, true);
+  mockServer();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { shown } = require('expo-camera');
+  const user = userEvent.setup();
+  await renderRouter(APP, { initialUrl: '/record' });
+  expect(shown.facing).toBe('back');
+
+  await user.press(screen.getByRole('button', { name: 'Switch to front camera' }));
+  expect(shown.facing).toBe('front');
+  await user.press(screen.getByRole('button', { name: 'Start recording' }));
+
+  expect(await screen.findByRole('button', { name: 'Stop recording' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Switch to back camera' })).toBeNull();
 });
