@@ -84,9 +84,9 @@ const DONE = {
   makes: 2,
   duration: 95.2,
   shots: [
-    { time: 18.1, made: true },
-    { time: 28.0, made: false },
-    { time: 70.4, made: true },
+    { time: 18.1, made: true, arc_ft: 3.2 },
+    { time: 28.0, made: false, arc_ft: 4.0 },
+    { time: 70.4, made: true, arc_ft: null },
   ],
 };
 const APP = './src/app';
@@ -189,6 +189,10 @@ test('records, saves, analyzes and shows the session results', async () => {
   expect(screen.getByText('1:35 session')).toBeTruthy();
   expect(screen.getByRole('image', { name: 'Makes at 0:18, 1:10' })).toBeTruthy();
   expect(screen.getByText('0:28')).toBeTruthy();
+  expect(screen.getByText('3.6 ft')).toBeTruthy(); // average arc of the two measured shots
+  expect(screen.getByText('Arc: your makes peaked 3.2 ft above the rim on average, your misses 4.0 ft.')).toBeTruthy();
+  expect(screen.getByLabelText('arc 4.0 feet')).toBeTruthy();
+  expect(screen.getByLabelText('arc not measured')).toBeTruthy();
   expect(savedSessions()).toEqual([expect.objectContaining({ attempts: 3, makes: 2, duration: 95.2 })]);
 }, 15000);
 
@@ -329,4 +333,13 @@ test('history totals every session and opens one', async () => {
   expect(screen.getByRole('image', { name: 'Shooting percentage by session, oldest first: 31%, 18%' })).toBeTruthy();
   await user.press(screen.getByRole('button', { name: /^Oct 20: 11 of 35 made/ }));
   expect(await screen.findByRole('image', { name: '31% made, 11 of 35' })).toBeTruthy();
+});
+
+test('results explain when no arc could be measured', async () => {
+  saveSessions([
+    { id: '1', date: new Date().toISOString(), attempts: 1, makes: 0, duration: 30, shots: [{ time: 5, made: false }] },
+  ]);
+  await renderRouter(APP, { initialUrl: '/results/1' });
+
+  expect(await screen.findByText(/Arc not measured: the top of the ball's flight wasn't in view/)).toBeTruthy();
 });
