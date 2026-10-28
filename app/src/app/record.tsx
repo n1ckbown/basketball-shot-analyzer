@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { File } from 'expo-file-system';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Asset, usePermissions as useMediaPermissions } from 'expo-media-library';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -9,7 +9,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { checkSetup, errorText, type SetupChecks } from '../analyze';
 import { StepIcon } from '../components/StepIcon';
-import { clock } from '../sessions';
+import { clock, type Mode } from '../sessions';
 import { colors } from '../theme';
 
 const CHECK_INTERVAL_MS = 3000;
@@ -18,8 +18,15 @@ const CHECKS = [
   { key: 'room_above', label: 'Room above the rim', fix: "Tilt the phone down a little so there's space above the rim." },
   { key: 'close_enough', label: 'Close enough to the hoop', fix: 'Move closer to the hoop.' },
 ] as const;
+// Form mode needs no hoop, so it gets filming tips instead of the hoop checks.
+const FORM_TIPS = [
+  'Film from the side, about 15–25 ft away',
+  'Keep your whole body and the ball in the picture',
+  'Prop the phone up so it stays still',
+];
 
 export default function Record() {
+  const { mode = 'shots' } = useLocalSearchParams<{ mode?: Mode }>();
   const camera = useRef<CameraView>(null);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -38,7 +45,7 @@ export default function Record() {
 
   // Before recording, check a quiet photo every few seconds so the panel follows the phone as it's adjusted.
   useEffect(() => {
-    if (!isReady || isRecording) return;
+    if (!isReady || isRecording || mode === 'form') return;
     let busy = false;
     async function check() {
       if (busy) return;
@@ -63,7 +70,7 @@ export default function Record() {
     check();
     const timer = setInterval(check, CHECK_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [isReady, isRecording, facing]);
+  }, [isReady, isRecording, facing, mode]);
 
   useEffect(() => {
     if (!isRecording) return;
@@ -111,7 +118,7 @@ export default function Record() {
     if (uri) {
       setMessage('Saving…');
       const note = await saveVideo(uri);
-      router.replace({ pathname: '/analyze', params: { uri, note } });
+      router.replace({ pathname: '/analyze', params: { uri, note, mode } });
     }
   }
 
@@ -158,24 +165,40 @@ export default function Record() {
                   ? { top: insets.top + 16, right: insets.right + 16, width: 290 }
                   : { top: insets.top + 64, left: 16, right: 16 },
               ]}>
-              <Text accessibilityRole="header" style={styles.panelTitle}>
-                {checks === null ? 'Checking your setup…' : ready ? 'Ready to record' : 'Set up your shot'}
-              </Text>
-              {CHECKS.map(({ key, label }) => {
-                const ok = checks?.[key];
-                return (
-                  <View
-                    key={key}
-                    accessible
-                    accessibilityLabel={`${label}: ${ok ? 'yes' : ok === false ? 'not yet' : 'checking'}`}
-                    style={styles.checkRow}>
-                    <StepIcon state={ok ? 'done' : 'waiting'} />
-                    <Text style={styles.checkLabel}>{label}</Text>
-                  </View>
-                );
-              })}
-              {fix || checkError ? <Text style={styles.fix}>{fix || checkError}</Text> : null}
-              <Text style={styles.hint}>Best spot: propped up about 45° behind you, on your shooting side.</Text>
+              {mode === 'form' ? (
+                <>
+                  <Text accessibilityRole="header" style={styles.panelTitle}>
+                    Form check
+                  </Text>
+                  {FORM_TIPS.map((tip) => (
+                    <View key={tip} style={styles.checkRow}>
+                      <StepIcon state="active" />
+                      <Text style={styles.checkLabel}>{tip}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <Text accessibilityRole="header" style={styles.panelTitle}>
+                    {checks === null ? 'Checking your setup…' : ready ? 'Ready to record' : 'Set up your shot'}
+                  </Text>
+                  {CHECKS.map(({ key, label }) => {
+                    const ok = checks?.[key];
+                    return (
+                      <View
+                        key={key}
+                        accessible
+                        accessibilityLabel={`${label}: ${ok ? 'yes' : ok === false ? 'not yet' : 'checking'}`}
+                        style={styles.checkRow}>
+                        <StepIcon state={ok ? 'done' : 'waiting'} />
+                        <Text style={styles.checkLabel}>{label}</Text>
+                      </View>
+                    );
+                  })}
+                  {fix || checkError ? <Text style={styles.fix}>{fix || checkError}</Text> : null}
+                  <Text style={styles.hint}>Best spot: propped up about 45° behind you, on your shooting side.</Text>
+                </>
+              )}
             </View>
           ) : null}
         </>

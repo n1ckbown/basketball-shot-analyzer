@@ -7,10 +7,11 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
 MAX_UPLOAD_BYTES = 1024**3  # 1 GB, roughly 10 minutes of 1080p phone video
@@ -38,6 +39,19 @@ def analyze_video(path, on_progress):
     return analyze_video(path, detector(), on_progress)
 
 
+@functools.cache
+def pose_tracker():
+    from app.form import PoseTracker
+
+    return PoseTracker(balls=detector())
+
+
+def analyze_form(path, on_progress):
+    from app.form import analyze_form
+
+    return analyze_form(path, pose_tracker(), on_progress)
+
+
 def check_setup(image):
     from app.shots import check_setup
 
@@ -46,8 +60,11 @@ def check_setup(image):
 
 def process(video: Path):
     """Analyze an uploaded video and save the result next to it as <job_id>.json."""
+    # A <job_id>.form file marks a form video, so the mode survives a restart.
+    mode = "form" if video.with_suffix(".form").exists() else "shots"
+    analyze = analyze_form if mode == "form" else analyze_video
     try:
-        result = {"status": "done", **analyze_video(video, lambda done: progress.__setitem__(video.stem, done))}
+        result = {"status": "done", "mode": mode, **analyze(video, lambda done: progress.__setitem__(video.stem, done))}
     except Exception as error:  # Any failure must reach the app as "failed", not leave the job stuck.
         result = {"status": "failed", "error": str(error)}
     partial = video.with_suffix(".json.part")
@@ -81,7 +98,8 @@ def health():
 
 
 @app.post("/videos", status_code=201)
-def upload_video(file: UploadFile):
+def upload_video(file: UploadFile, mode: Literal["shots", "form"] = Form("shots")):
+    """mode "shots" counts makes and misses (the hoop must be in view); "form" measures the shooter's form."""
     extension = VIDEO_EXTENSIONS.get(file.content_type)
     if extension is None:
         raise HTTPException(415, "Upload an MP4 or MOV video.")
@@ -95,6 +113,8 @@ def upload_video(file: UploadFile):
     job_id = uuid.uuid4().hex
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     video = UPLOAD_DIR / f"{job_id}{extension}"
+    if mode == "form":
+        video.with_suffix(".form").touch()  # Before the video, so a restart can never find the video without it.
     with open(video, "wb") as destination:
         shutil.copyfileobj(file.file, destination)
     worker.submit(process, video)
