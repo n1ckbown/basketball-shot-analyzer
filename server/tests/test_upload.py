@@ -110,3 +110,13 @@ def test_setup_check_runs_the_photo_through_the_detector(monkeypatch):
 def test_setup_check_rejects_files_that_are_not_photos():
     assert client.post("/setup-check", files={"file": ("a.txt", b"hi", "text/plain")}).status_code == 415
     assert client.post("/setup-check", files={"file": ("a.jpg", b"not a jpeg", "image/jpeg")}).status_code == 400
+
+
+def test_videos_left_unanalyzed_by_a_restart_are_analyzed_on_startup(upload_dir):
+    (upload_dir / f"{'1' * 32}.mov").write_bytes(b"video")
+    (upload_dir / f"{'2' * 32}.mp4").write_bytes(b"video")
+    (upload_dir / f"{'2' * 32}.json").write_text('{"status": "done"}')
+
+    with TestClient(main.app) as restarted:
+        assert restarted.get(f"/videos/{'1' * 32}").json() == {"status": "done", **RESULT}
+        assert restarted.get(f"/videos/{'2' * 32}").json() == {"status": "done"}  # already analyzed: left alone

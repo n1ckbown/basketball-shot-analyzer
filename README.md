@@ -54,7 +54,19 @@ To list every shot with make or miss instead (needs the fine-tuned model, see be
 python -m app.shots ..\data\videos\session1.mov
 ```
 
-This assumes a still camera with the hoop in view. On a 9-minute side-view test video it found all 35 shots and called 33 of them correctly. From a pure side view, a ball that drops just behind the net can look like a make.
+This assumes a still camera with the hoop in view. From a pure side view, a ball that drops just behind the net can look like a make.
+
+### Measuring accuracy
+
+Label a session by writing one shot per line, `m:ss make` or `m:ss miss`, at about when the ball was released. Then score every labeled session at once, from `server/`:
+
+```
+python -m app.evaluate ..\data\IMG_8838.MOV ..\data\IMG_8838_shots.txt ..\data\session2.mov ..\data\session2_shots.txt
+```
+
+It prints shots found, extra shots, and make/miss calls that were right, per session and in total, with the time of each mistake. The first run on a video saves its detections next to it, so later runs take seconds. Current score: 57 of 57 shots found, 0 extra, and 54 of 57 make/miss right (95%), across a 9-minute side view and a 4-minute ground-level session.
+
+**Release target:** at least 95% of shots found and at least 90–95% make/miss right in every session, on 10–15 labeled sessions covering the 45° angle, several courts, indoor and outdoor, and different light. Rerun this after every rule change.
 
 ### Training the ball/hoop detector
 
