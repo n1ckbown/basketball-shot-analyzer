@@ -22,7 +22,7 @@ class RunNow:
 def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
     monkeypatch.setattr(main, "worker", RunNow())
-    monkeypatch.setattr(main, "analyze_video", lambda path: RESULT)
+    monkeypatch.setattr(main, "analyze_video", lambda path, on_progress: RESULT)
     return tmp_path
 
 
@@ -75,11 +75,32 @@ def test_result_says_processing_until_analysis_finishes(upload_dir):
     job_id = "0" * 32
     (upload_dir / f"{job_id}.mov").write_bytes(b"video")
 
-    assert client.get(f"/videos/{job_id}").json() == {"status": "processing"}
+    assert client.get(f"/videos/{job_id}").json() == {"status": "processing", "progress": 0.0}
+
+    main.progress[job_id] = 0.4213
+    try:
+        assert client.get(f"/videos/{job_id}").json() == {"status": "processing", "progress": 0.42}
+    finally:
+        main.progress.clear()
+
+
+def test_progress_is_tracked_while_a_video_is_analyzed(monkeypatch):
+    seen = []
+
+    def analyze(path, on_progress):
+        on_progress(0.5)
+        seen.append(dict(main.progress))
+        return RESULT
+
+    monkeypatch.setattr(main, "analyze_video", analyze)
+    job_id = upload(b"fake video bytes").json()["job_id"]
+
+    assert seen == [{job_id: 0.5}]
+    assert main.progress == {}  # cleared once the result is saved
 
 
 def test_failed_analysis_is_reported(monkeypatch):
-    def broken(path):
+    def broken(path, on_progress):
         raise ValueError("Could not open video")
 
     monkeypatch.setattr(main, "analyze_video", broken)

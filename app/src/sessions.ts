@@ -25,8 +25,8 @@ export async function saveSession(results: Results): Promise<Session> {
   return session;
 }
 
-export function percent(session: Results) {
-  return session.attempts ? Math.round((100 * session.makes) / session.attempts) : 0;
+export function percent({ makes, attempts }: { makes: number; attempts: number }) {
+  return attempts ? Math.round((100 * makes) / attempts) : 0;
 }
 
 export function clock(seconds: number) {

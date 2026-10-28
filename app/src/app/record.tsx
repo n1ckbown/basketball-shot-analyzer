@@ -5,9 +5,10 @@ import { Asset, usePermissions as useMediaPermissions } from 'expo-media-library
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Path } from 'react-native-svg';
 
 import { checkSetup, errorText, type SetupChecks } from '../analyze';
+import { StepIcon } from '../components/StepIcon';
 import { clock } from '../sessions';
 import { colors } from '../theme';
 
@@ -168,23 +169,7 @@ export default function Record() {
                     accessible
                     accessibilityLabel={`${label}: ${ok ? 'yes' : ok === false ? 'not yet' : 'checking'}`}
                     style={styles.checkRow}>
-                    <Svg width={22} height={22} viewBox="0 0 22 22">
-                      {ok ? (
-                        <>
-                          <Circle cx={11} cy={11} r={11} fill={colors.accent} />
-                          <Path
-                            d="M6.5 11.5l3 3 6-6.5"
-                            stroke={colors.onAccent}
-                            strokeWidth={2}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            fill="none"
-                          />
-                        </>
-                      ) : (
-                        <Circle cx={11} cy={11} r={9.5} stroke={colors.miss} strokeWidth={2} fill="none" />
-                      )}
-                    </Svg>
+                    <StepIcon state={ok ? 'done' : 'waiting'} />
                     <Text style={styles.checkLabel}>{label}</Text>
                   </View>
                 );

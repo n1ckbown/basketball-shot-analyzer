@@ -27,7 +27,7 @@ uvicorn app.main:app --app-dir server --host 0.0.0.0
 ```
 
 - `POST /videos` (form field `file`, MP4 or MOV) saves the video, queues it for analysis and returns `{"job_id": ...}`. Videos are analyzed one at a time.
-- `GET /videos/{job_id}` returns `{"status": "processing"}` until analysis finishes. Then it returns `{"status": "done", "attempts": 35, "makes": 11, "duration": 536.7, "shots": [{"time": 18.1, "made": true, "arc_ft": 3.4}, ...]}`, where `duration` is the video length and `time` is when the ball reached the rim, both in seconds. `arc_ft` is how many feet the ball rose above the rim, measured with gravity as the ruler. It is `null` when the top of the flight wasn't seen clearly, which is common when the rim is near the top of the picture. If analysis fails it returns `{"status": "failed", "error": ...}`.
+- `GET /videos/{job_id}` returns `{"status": "processing", "progress": 0.42}` until analysis finishes, where `progress` is the fraction of the video analyzed so far (0 while waiting in the queue). Then it returns `{"status": "done", "attempts": 35, "makes": 11, "duration": 536.7, "shots": [{"time": 18.1, "made": true, "arc_ft": 3.4}, ...]}`, where `duration` is the video length and `time` is when the ball reached the rim, both in seconds. `arc_ft` is how many feet the ball rose above the rim, measured with gravity as the ruler. It is `null` when the top of the flight wasn't seen clearly, which is common when the rim is near the top of the picture. If analysis fails it returns `{"status": "failed", "error": ...}`.
 - `POST /setup-check` (form field `file`, a JPEG or PNG photo from the phone's camera) answers right away with `{"hoop": true, "room_above": true, "close_enough": true}`: whether the hoop is in view, whether there are at least 2.5 rim heights of space above the rim, and whether the rim is at least 4% of the picture width. `room_above` and `close_enough` are `null` when the photo doesn't show the rim clearly enough to judge.
 
 ### Using an NVIDIA GPU (recommended for detection)
@@ -110,7 +110,7 @@ Each step is one pull request.
 4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
 6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; tested on a real phone)
-7. App: new look (in progress: Home with saved sessions and a redesigned results screen are done and tested on a phone, under `app/src/app/`; the setup check with camera flip is done and needs a phone test; next: the analyzing and history screens)
+7. App: new look (in progress: Home with saved sessions and a redesigned results screen are done and tested on a phone, under `app/src/app/`; the setup check with camera flip, the analyzing screen with live progress, and the history screen are done and need a phone test)
 8. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
 ## Ownership
