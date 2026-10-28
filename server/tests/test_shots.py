@@ -1,5 +1,5 @@
 from app.detection import Detection
-from app.shots import arc_height, find_shots, locate_rim
+from app.shots import arc_height, check_setup, find_shots, locate_rim
 
 # Rim at x 100-200, y 100-150; the backboard behind it scores higher, as in real footage.
 BACKBOARD = Detection("hoop", 0.9, (120, 20, 220, 140))
@@ -57,6 +57,25 @@ def test_rim_bounce_out_of_the_picture_is_one_shot():
     up_and_away = [(200, 60), (220, 20)] + [None] * 40 + [(240, 30), (250, 90), (260, 300)]
     shots = find_shots(frames_for(APPROACH + up_and_away), fps=30)
     assert [s.made for s in shots] == [False]
+
+
+def test_setup_check_wants_the_hoop_in_view_with_room_above_and_big_enough():
+    def rim_at(top, width=100):
+        return [BACKBOARD, Detection("hoop", 0.5, (100, top, 100 + width, top + width // 2))]
+
+    assert check_setup([], 1000) == {"hoop": False, "room_above": False, "close_enough": False}
+    assert check_setup(rim_at(200), 1000) == {"hoop": True, "room_above": True, "close_enough": True}
+    assert check_setup(rim_at(50), 1000)["room_above"] is False  # one rim height from the top
+    assert check_setup(rim_at(200, width=30), 1000)["close_enough"] is False  # 3% of the picture width
+
+
+def test_setup_check_is_unsure_without_a_rim_shaped_box():
+    rim_and_backboard = Detection("hoop", 0.4, (100, 20, 220, 140))  # square: not clearly a rim
+
+    assert check_setup([BACKBOARD, rim_and_backboard], 1000) == {"hoop": True, "room_above": None, "close_enough": None}
+    rim = Detection("hoop", 0.4, (100, 200, 200, 250))
+    lookalike_near_the_top = Detection("hoop", 0.5, (600, 20, 700, 40))  # more confident, but far from the hoop
+    assert check_setup([BACKBOARD, rim, lookalike_near_the_top], 1000)["room_above"] is True
 
 
 def flight(ball_width, times):

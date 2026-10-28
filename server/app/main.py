@@ -8,15 +8,21 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import cv2
+import numpy as np
 from fastapi import FastAPI, HTTPException, UploadFile
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
 MAX_UPLOAD_BYTES = 1024**3  # 1 GB, roughly 10 minutes of 1080p phone video
 VIDEO_EXTENSIONS = {"video/mp4": ".mp4", "video/quicktime": ".mov"}
 JOB_ID = re.compile(r"[0-9a-f]{32}")
+PHOTO_TYPES = {"image/jpeg", "image/png"}
+MAX_PHOTO_BYTES = 20 * 2**20
 
 # One video at a time: they share the GPU, and a second job would only slow the first.
 worker = ThreadPoolExecutor(1)
+# Fraction done of the video being analyzed, by job ID; only the worker thread writes it.
+progress: dict[str, float] = {}
 
 
 @functools.cache
@@ -26,21 +32,28 @@ def detector():
     return Detector()
 
 
-def analyze_video(path):
+def analyze_video(path, on_progress):
     from app.shots import analyze_video
 
-    return analyze_video(path, detector())
+    return analyze_video(path, detector(), on_progress)
+
+
+def check_setup(image):
+    from app.shots import check_setup
+
+    return check_setup(detector().detect([image])[0], image.shape[1])
 
 
 def process(video: Path):
     """Analyze an uploaded video and save the result next to it as <job_id>.json."""
     try:
-        result = {"status": "done", **analyze_video(video)}
+        result = {"status": "done", **analyze_video(video, lambda done: progress.__setitem__(video.stem, done))}
     except Exception as error:  # Any failure must reach the app as "failed", not leave the job stuck.
         result = {"status": "failed", "error": str(error)}
     partial = video.with_suffix(".json.part")
     partial.write_text(json.dumps(result))
     partial.replace(video.with_suffix(".json"))  # Readers never see a half-written file.
+    progress.pop(video.stem, None)
 
 
 def requeue_unfinished():
@@ -97,5 +110,19 @@ def video_result(job_id: str):
     if result.exists():
         return json.loads(result.read_text())
     if any((UPLOAD_DIR / f"{job_id}{extension}").exists() for extension in VIDEO_EXTENSIONS.values()):
-        return {"status": "processing"}
+        return {"status": "processing", "progress": round(progress.get(job_id, 0.0), 2)}
     raise HTTPException(404, "No such video.")
+
+
+@app.post("/setup-check")
+def setup_check(file: UploadFile):
+    """Checks one photo from the phone's camera before recording: hoop in view, room above it, big enough."""
+    if file.content_type not in PHOTO_TYPES:
+        raise HTTPException(415, "Upload a JPEG or PNG photo.")
+    data = file.file.read(MAX_PHOTO_BYTES + 1)
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, f"Photo is larger than the {MAX_PHOTO_BYTES // 2**20} MB limit.")
+    image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(400, "Could not read the photo.")
+    return check_setup(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))

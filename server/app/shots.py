@@ -166,10 +166,44 @@ def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Sh
     return shots
 
 
-def analyze_video(path, detector) -> dict:
+# Setup check on one photo before recording.
+# shortcut: from two sessions only (a rim 1.5 rim heights from the top of the picture double-counted a high
+# bounce, 3.9 was fine; rims 5.7% and 6.9% of the picture width both tracked well); revisit with more sessions.
+SETUP_MIN_ROOM_ABOVE = 2.5  # rim heights between the top of the picture and the rim
+SETUP_MIN_RIM_WIDTH = 0.04  # fraction of the picture width
+# In a single photo the rim box is sometimes missing, or merged with the backboard into a square box;
+# rim boxes are clearly wider than tall (1.16 to 1.42 in both sessions).
+SETUP_RIM_MIN_ASPECT = 1.1
+
+
+def check_setup(detections: list[Detection], width: int) -> dict:
+    """Whether a photo from the phone shows the hoop, with space above the rim, big enough to track.
+
+    room_above and close_enough are None when the hoop is seen but no clearly rim-shaped box is.
+    """
+    hoops = [d for d in detections if d.label == "hoop"]
+    if not hoops:
+        return {"hoop": False, "room_above": False, "close_enough": False}
+    # Near the most confident hoop box, so a look-alike elsewhere in the picture isn't taken for the rim.
+    ax1, ay1, ax2, ay2 = max(hoops, key=lambda d: d.score).box
+    aw, ah = ax2 - ax1, ay2 - ay1
+    rims = [d for d in hoops
+            if d.box[2] - d.box[0] >= SETUP_RIM_MIN_ASPECT * (d.box[3] - d.box[1])
+            and ax1 - aw < center(d.box)[0] < ax2 + aw and ay1 - ah < center(d.box)[1] < ay2 + ah]
+    if not rims:
+        return {"hoop": True, "room_above": None, "close_enough": None}
+    x1, y1, x2, y2 = max(rims, key=lambda d: d.score).box
+    return {
+        "hoop": True,
+        "room_above": y1 >= SETUP_MIN_ROOM_ABOVE * (y2 - y1),
+        "close_enough": x2 - x1 >= SETUP_MIN_RIM_WIDTH * width,
+    }
+
+
+def analyze_video(path, detector, on_progress=None) -> dict:
     """Shots in a video file as JSON-ready data: totals, the video length, then the time and result of each shot."""
     fps = cv2.VideoCapture(str(path)).get(cv2.CAP_PROP_FPS)
-    frames = detect_video(path, detector)
+    frames = detect_video(path, detector, on_progress=on_progress)
     shots = find_shots(frames, fps)
     return {
         "attempts": len(shots),

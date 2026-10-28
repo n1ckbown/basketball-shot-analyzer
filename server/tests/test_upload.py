@@ -1,3 +1,5 @@
+import cv2
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,7 +22,7 @@ class RunNow:
 def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
     monkeypatch.setattr(main, "worker", RunNow())
-    monkeypatch.setattr(main, "analyze_video", lambda path: RESULT)
+    monkeypatch.setattr(main, "analyze_video", lambda path, on_progress: RESULT)
     return tmp_path
 
 
@@ -73,11 +75,32 @@ def test_result_says_processing_until_analysis_finishes(upload_dir):
     job_id = "0" * 32
     (upload_dir / f"{job_id}.mov").write_bytes(b"video")
 
-    assert client.get(f"/videos/{job_id}").json() == {"status": "processing"}
+    assert client.get(f"/videos/{job_id}").json() == {"status": "processing", "progress": 0.0}
+
+    main.progress[job_id] = 0.4213
+    try:
+        assert client.get(f"/videos/{job_id}").json() == {"status": "processing", "progress": 0.42}
+    finally:
+        main.progress.clear()
+
+
+def test_progress_is_tracked_while_a_video_is_analyzed(monkeypatch):
+    seen = []
+
+    def analyze(path, on_progress):
+        on_progress(0.5)
+        seen.append(dict(main.progress))
+        return RESULT
+
+    monkeypatch.setattr(main, "analyze_video", analyze)
+    job_id = upload(b"fake video bytes").json()["job_id"]
+
+    assert seen == [{job_id: 0.5}]
+    assert main.progress == {}  # cleared once the result is saved
 
 
 def test_failed_analysis_is_reported(monkeypatch):
-    def broken(path):
+    def broken(path, on_progress):
         raise ValueError("Could not open video")
 
     monkeypatch.setattr(main, "analyze_video", broken)
@@ -92,6 +115,22 @@ def test_unknown_or_malformed_job_ids_are_not_found(upload_dir):
     assert client.get(f"/videos/{'a' * 32}").status_code == 404
     assert client.get("/videos/secret").status_code == 404
     assert client.get("/videos/..%2Fsecret").status_code == 404
+
+
+def test_setup_check_runs_the_photo_through_the_detector(monkeypatch):
+    seen = []
+    monkeypatch.setattr(main, "check_setup", lambda image: seen.append(image.shape) or {"hoop": True})
+    _, jpeg = cv2.imencode(".jpg", np.zeros((90, 160, 3), np.uint8))
+
+    response = client.post("/setup-check", files={"file": ("photo.jpg", jpeg.tobytes(), "image/jpeg")})
+
+    assert response.json() == {"hoop": True}
+    assert seen == [(90, 160, 3)]
+
+
+def test_setup_check_rejects_files_that_are_not_photos():
+    assert client.post("/setup-check", files={"file": ("a.txt", b"hi", "text/plain")}).status_code == 415
+    assert client.post("/setup-check", files={"file": ("a.jpg", b"not a jpeg", "image/jpeg")}).status_code == 400
 
 
 def test_videos_left_unanalyzed_by_a_restart_are_analyzed_on_startup(upload_dir):

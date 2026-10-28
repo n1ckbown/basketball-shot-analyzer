@@ -45,6 +45,14 @@ export default function Results() {
 
   const made = session.shots.filter((shot) => shot.made);
   const length = Math.max(session.duration, 1);
+  const arcs = session.shots.filter((shot) => shot.arc_ft != null);
+  const makeArcs = arcs.filter((shot) => shot.made);
+  const missArcs = arcs.filter((shot) => !shot.made);
+  const arcNote = !arcs.length
+    ? "Arc not measured: the top of the ball's flight wasn't in view. Leave room above the rim when you set up."
+    : makeArcs.length && missArcs.length
+      ? `Arc: your makes peaked ${averageArc(makeArcs)} above the rim on average, your misses ${averageArc(missArcs)}.`
+      : `Arc measured on ${arcs.length} of ${session.shots.length} shots.`;
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 12 }]}>
       <View style={styles.header}>
@@ -69,8 +77,8 @@ export default function Results() {
         <View style={styles.stats}>
           <Stat label="Made" value={String(session.makes)} accent />
           <Stat label="Missed" value={String(session.attempts - session.makes)} />
-          <Stat label="Shots" value={String(session.attempts)} />
           <Stat label="Per minute" value={(session.attempts / (length / 60)).toFixed(1)} />
+          <Stat label="Avg arc" value={arcs.length ? averageArc(arcs) : '–'} />
         </View>
       </View>
 
@@ -100,6 +108,7 @@ export default function Results() {
             <Text style={styles.small}>0:00</Text>
             <Text style={styles.small}>{clock(session.duration)}</Text>
           </View>
+          <Text style={styles.arcNote}>{arcNote}</Text>
         </View>
       ) : null}
 
@@ -113,6 +122,11 @@ export default function Results() {
               <View style={[styles.rowDot, { backgroundColor: shot.made ? colors.accent : colors.miss }]} />
               <Text style={styles.rowTitle}>Shot {index + 1}</Text>
               <Text style={styles.rowTime}>{clock(shot.time)}</Text>
+              <Text
+                accessibilityLabel={shot.arc_ft != null ? `arc ${shot.arc_ft.toFixed(1)} feet` : 'arc not measured'}
+                style={styles.rowArc}>
+                {shot.arc_ft != null ? `${shot.arc_ft.toFixed(1)} ft` : '–'}
+              </Text>
               <Text style={[styles.rowResult, shot.made && styles.makeText]}>{shot.made ? 'Make' : 'Miss'}</Text>
             </View>
           ))
@@ -122,6 +136,10 @@ export default function Results() {
       </ScrollView>
     </View>
   );
+}
+
+function averageArc(shots: { arc_ft?: number | null }[]) {
+  return `${(shots.reduce((sum, shot) => sum + (shot.arc_ft ?? 0), 0) / shots.length).toFixed(1)} ft`;
 }
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
@@ -283,6 +301,21 @@ const styles = StyleSheet.create({
     color: colors.secondary,
     fontSize: 16,
     fontVariant: ['tabular-nums'],
+  },
+  rowArc: {
+    width: 52,
+    textAlign: 'right',
+    color: colors.tertiary,
+    fontSize: 14,
+    fontVariant: ['tabular-nums'],
+  },
+  arcNote: {
+    color: colors.secondary,
+    fontSize: 14,
+    lineHeight: 19,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.separator,
   },
   rowResult: {
     width: 44,
