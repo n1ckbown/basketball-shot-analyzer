@@ -4,7 +4,8 @@ export type Results = {
   attempts: number;
   makes: number;
   duration: number; // seconds
-  shots: { time: number; made: boolean }[];
+  // arc_ft: feet the ball rose above the rim; null when not measured, missing in sessions saved before arcs.
+  shots: { time: number; made: boolean; arc_ft?: number | null }[];
 };
 export type Session = Results & { id: string; date: string };
 
