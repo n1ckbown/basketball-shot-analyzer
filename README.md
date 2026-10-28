@@ -27,7 +27,7 @@ uvicorn app.main:app --app-dir server --host 0.0.0.0
 ```
 
 - `POST /videos` (form field `file`, MP4 or MOV) saves the video, queues it for analysis and returns `{"job_id": ...}`. Videos are analyzed one at a time.
-- `GET /videos/{job_id}` returns `{"status": "processing"}` until analysis finishes. Then it returns `{"status": "done", "attempts": 35, "makes": 11, "duration": 536.7, "shots": [{"time": 18.1, "made": true}, ...]}`, where `duration` is the video length and `time` is when the ball reached the rim, both in seconds. If analysis fails it returns `{"status": "failed", "error": ...}`.
+- `GET /videos/{job_id}` returns `{"status": "processing"}` until analysis finishes. Then it returns `{"status": "done", "attempts": 35, "makes": 11, "duration": 536.7, "shots": [{"time": 18.1, "made": true, "arc_ft": 3.4}, ...]}`, where `duration` is the video length and `time` is when the ball reached the rim, both in seconds. `arc_ft` is how many feet the ball rose above the rim, measured with gravity as the ruler. It is `null` when the top of the flight wasn't seen clearly, which is common when the rim is near the top of the picture. If analysis fails it returns `{"status": "failed", "error": ...}`.
 
 ### Using an NVIDIA GPU (recommended for detection)
 

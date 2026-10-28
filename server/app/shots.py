@@ -9,6 +9,7 @@ import sys
 from dataclasses import dataclass
 
 import cv2
+import numpy as np
 
 from app.detection import Detection, Detector, detect_video
 
@@ -34,11 +35,24 @@ MAKE_ZONE_HALF_WIDTH = 0.4
 MAKE_MIN_FRAMES = 2
 MAKE_WAIT_SECONDS = 1.0
 
+# Arc: how high the ball rose above the rim, with gravity as the ruler (the curve of a free flight gives meters
+# per pixel at any camera angle). On the side-view session this agreed with the ball's own size to about 10%,
+# while the rim's size was off by 1.7x because the shooter and the hoop were at different distances.
+GRAVITY = 9.81  # m/s^2
+BALL_DIAMETER_M = 0.239  # men's size 7
+FEET_PER_METER = 3.281
+ARC_MIN_SECONDS = 0.5  # of clean flight before the rim
+ARC_FIT_TOLERANCE = 0.15  # rim widths a free flight may stray from its parabola
+# Gravity's scale over the ball's: detection boxes run about 10% larger than the ball. Outside this range the
+# path wasn't a free flight (a lay-up, a tip-in, two balls mixed up), so no arc is given.
+ARC_SCALE_AGREEMENT = (0.8, 1.4)
+
 
 @dataclass(frozen=True)
 class Shot:
     frame: int  # first frame with the ball at the rim
     made: bool  # a miss followed by a put-back within 1.5 seconds counts as one made shot
+    arc_ft: float | None = None  # how high the ball rose above the rim; None when the top of the flight wasn't seen
 
 
 def center(box) -> tuple[float, float]:
@@ -68,15 +82,46 @@ def locate_rim(frames) -> tuple[float, float, float, float] | None:
     return tuple(statistics.median(b[k] for b in boxes) for k in range(4))
 
 
-def ball_positions(frames, rim) -> dict[int, tuple[float, float]]:
-    """Center of the best ball per frame, skipping boxes wider than the rim (a ball right next to the camera, hands)."""
+def ball_positions(frames, rim) -> dict[int, tuple[float, float, float]]:
+    """Center and width of the best ball per frame, skipping boxes wider than the rim (a ball right next to the
+    camera, hands)."""
     rim_width = rim[2] - rim[0]
     positions = {}
     for index, ds in frames:
         balls = [d for d in ds if d.label == "ball" and d.score >= BALL_MIN_SCORE and d.box[2] - d.box[0] <= rim_width]
         if balls:
-            positions[index] = center(max(balls, key=lambda d: d.score).box)
+            box = max(balls, key=lambda d: d.score).box
+            positions[index] = (*center(box), box[2] - box[0])
     return positions
+
+
+def arc_height(start: int, balls, rim, fps: float) -> float | None:
+    """Feet the ball rose above the rim in the flight that reached it at frame `start`, or None if unclear."""
+    rim_width = rim[2] - rim[0]
+    flight = [(i / fps, balls[i]) for i in range(round(start - 2 * fps), start + 1) if i in balls]
+    # Grow the flight back from the rim for as long as it stays one clean parabola (gravity pulls image y down).
+    best = None
+    for first in range(len(flight) - 6, -1, -1):
+        t = np.array([time for time, _ in flight[first:]])
+        y = np.array([ball[1] for _, ball in flight[first:]])
+        a, b, c = np.polyfit(t, y, 2)
+        if a <= 0 or np.abs(np.polyval((a, b, c), t) - y).max() > ARC_FIT_TOLERANCE * rim_width:
+            break
+        best = flight[first:], (a, b, c)
+    if best is None:
+        return None
+    points, (a, b, c) = best
+    apex_time = -b / (2 * a)
+    # The top must be seen, with a few points on each side of it, not guessed from a rising or falling part alone.
+    if points[-1][0] - points[0][0] < ARC_MIN_SECONDS or not points[2][0] < apex_time < points[-3][0]:
+        return None
+    meters_per_pixel = GRAVITY / (2 * a)
+    by_ball_size = BALL_DIAMETER_M / float(np.median([ball[2] for _, ball in points]))
+    if not ARC_SCALE_AGREEMENT[0] < meters_per_pixel / by_ball_size < ARC_SCALE_AGREEMENT[1]:
+        return None
+    apex_y = c - b * b / (4 * a)
+    arc = (rim[1] - apex_y) * meters_per_pixel * FEET_PER_METER
+    return round(arc, 1) if arc > 0 else None
 
 
 def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Shot]:
@@ -88,7 +133,7 @@ def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Sh
     rim_x = (x1 + x2) / 2
     balls = ball_positions(frames, rim)
 
-    near = [i for i, (x, y) in sorted(balls.items())
+    near = [i for i, (x, y, _) in sorted(balls.items())
             if x1 - NEAR_RIM_SIDE * width < x < x2 + NEAR_RIM_SIDE * width
             and y1 - NEAR_RIM_ABOVE * height < y < y1 + NEAR_RIM_BELOW * height]
     attempts = []
@@ -105,7 +150,7 @@ def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Sh
         for i in range(start, end + 1):
             if i not in balls:
                 continue
-            x, y = balls[i]
+            x, y, _ = balls[i]
             off_center = abs(x - rim_x) / width
             if y < y1 + ENTRY_DEPTH * height and off_center < ENTRY_HALF_WIDTH:
                 entered = True
@@ -117,7 +162,7 @@ def find_shots(frames: list[tuple[int, list[Detection]]], fps: float) -> list[Sh
                 entered, in_make_zone = False, 0
             elif entered and y > y2:
                 in_make_zone += off_center < MAKE_ZONE_HALF_WIDTH
-        shots.append(Shot(start, in_make_zone >= MAKE_MIN_FRAMES))
+        shots.append(Shot(start, in_make_zone >= MAKE_MIN_FRAMES, arc_height(start, balls, rim, fps)))
     return shots
 
 
@@ -130,7 +175,7 @@ def analyze_video(path, detector) -> dict:
         "attempts": len(shots),
         "makes": sum(s.made for s in shots),
         "duration": round(len(frames) / fps, 1),
-        "shots": [{"time": round(s.frame / fps, 1), "made": s.made} for s in shots],
+        "shots": [{"time": round(s.frame / fps, 1), "made": s.made, "arc_ft": s.arc_ft} for s in shots],
     }
 
 
