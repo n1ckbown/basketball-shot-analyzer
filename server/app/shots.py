@@ -18,16 +18,17 @@ NEAR_RIM_ABOVE = 2.0
 NEAR_RIM_BELOW = 0.5
 # Real balls score about 0.75; a few fixed spots on the hoop are mistaken for a ball at just over 0.3.
 BALL_MIN_SCORE = 0.4
-# Frames near the rim with gaps shorter than this belong to the same attempt.
-SAME_SHOT_SECONDS = 1.0
+# Frames near the rim with gaps shorter than this belong to the same attempt. A high bounce off the rim
+# can leave the picture for over a second when the rim is near the top of the frame.
+SAME_SHOT_SECONDS = 1.5
 # A make starts with the ball in the top half of the rim (or above it), inside its edges;
 # a ball that drops past the rim from outside them missed.
 ENTRY_DEPTH = 0.5
 ENTRY_HALF_WIDTH = 0.6
 # Then the ball is seen just below the rim, close to its center, before it falls further.
 # Misses that drop off the front rim fall about half a rim width from the center; makes mostly stay within 0.4.
-# shortcut: these numbers were tuned on one 9-minute side-view video (33 of 35 shots right); retune once
-# there are more labeled sessions, especially from other camera angles.
+# shortcut: these numbers were tuned on a 9-minute side-view video (33 of 35 right) and checked on a 4-minute
+# ground-level session (21 of 22 right); retune once there are more labeled sessions and camera angles.
 MAKE_ZONE_DEPTH = 2.0
 MAKE_ZONE_HALF_WIDTH = 0.4
 MAKE_MIN_FRAMES = 2
@@ -37,7 +38,7 @@ MAKE_WAIT_SECONDS = 1.0
 @dataclass(frozen=True)
 class Shot:
     frame: int  # first frame with the ball at the rim
-    made: bool  # a miss followed by a put-back within a second counts as one made shot
+    made: bool  # a miss followed by a put-back within 1.5 seconds counts as one made shot
 
 
 def center(box) -> tuple[float, float]:
