@@ -8,6 +8,22 @@ export function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** null: the hoop is in view but this photo didn't show the rim clearly enough to judge. */
+export type SetupChecks = { hoop: boolean; room_above: boolean | null; close_enough: boolean | null };
+
+/** Asks the server whether a photo from the camera is framed well for tracking shots. */
+export async function checkSetup(photoUri: string): Promise<SetupChecks> {
+  const server = process.env.EXPO_PUBLIC_SERVER_URL;
+  if (!server) throw new Error('no server address set (EXPO_PUBLIC_SERVER_URL).');
+  const response = await new File(photoUri).upload(`${server}/setup-check`, {
+    uploadType: UploadType.MULTIPART,
+    fieldName: 'file',
+    mimeType: 'image/jpeg',
+  });
+  if (response.status !== 200) throw new Error(`setup check failed (HTTP ${response.status})`);
+  return JSON.parse(response.body);
+}
+
 /** Uploads a video to the analysis server and waits for its makes and misses. */
 export async function analyzeVideo(uri: string, onStatus: (text: string) => void, signal: AbortSignal): Promise<Results> {
   const server = process.env.EXPO_PUBLIC_SERVER_URL;
