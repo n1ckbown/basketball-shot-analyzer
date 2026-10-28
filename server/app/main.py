@@ -21,6 +21,8 @@ MAX_PHOTO_BYTES = 20 * 2**20
 
 # One video at a time: they share the GPU, and a second job would only slow the first.
 worker = ThreadPoolExecutor(1)
+# Fraction done of the video being analyzed, by job ID; only the worker thread writes it.
+progress: dict[str, float] = {}
 
 
 @functools.cache
@@ -30,10 +32,10 @@ def detector():
     return Detector()
 
 
-def analyze_video(path):
+def analyze_video(path, on_progress):
     from app.shots import analyze_video
 
-    return analyze_video(path, detector())
+    return analyze_video(path, detector(), on_progress)
 
 
 def check_setup(image):
@@ -45,12 +47,13 @@ def check_setup(image):
 def process(video: Path):
     """Analyze an uploaded video and save the result next to it as <job_id>.json."""
     try:
-        result = {"status": "done", **analyze_video(video)}
+        result = {"status": "done", **analyze_video(video, lambda done: progress.__setitem__(video.stem, done))}
     except Exception as error:  # Any failure must reach the app as "failed", not leave the job stuck.
         result = {"status": "failed", "error": str(error)}
     partial = video.with_suffix(".json.part")
     partial.write_text(json.dumps(result))
     partial.replace(video.with_suffix(".json"))  # Readers never see a half-written file.
+    progress.pop(video.stem, None)
 
 
 def requeue_unfinished():
@@ -107,7 +110,7 @@ def video_result(job_id: str):
     if result.exists():
         return json.loads(result.read_text())
     if any((UPLOAD_DIR / f"{job_id}{extension}").exists() for extension in VIDEO_EXTENSIONS.values()):
-        return {"status": "processing"}
+        return {"status": "processing", "progress": round(progress.get(job_id, 0.0), 2)}
     raise HTTPException(404, "No such video.")
 
 

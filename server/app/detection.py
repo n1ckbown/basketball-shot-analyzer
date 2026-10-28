@@ -71,8 +71,12 @@ class Detector:
         return [to_detections(result, self.model.config.id2label) for result in results]
 
 
-def detect_video(path, detector, every_n=1) -> list[tuple[int, list[Detection]]]:
-    """Run the detector over a video in batches; returns (frame index, detections) per sampled frame."""
+def detect_video(path, detector, every_n=1, on_progress=None) -> list[tuple[int, list[Detection]]]:
+    """Run the detector over a video in batches; returns (frame index, detections) per sampled frame.
+
+    on_progress, if given, is called after each batch with the fraction of the video done (0 to 1).
+    """
+    total = cv2.VideoCapture(str(path)).get(cv2.CAP_PROP_FRAME_COUNT)
     results = []
     batches = itertools.batched(read_frames(path, every_n), BATCH_SIZE)
     # Decode the next batch in a second thread while the detector works (OpenCV releases the GIL while decoding).
@@ -82,6 +86,8 @@ def detect_video(path, detector, every_n=1) -> list[tuple[int, list[Detection]]]
             upcoming = decoder.submit(next, batches, None)
             indexes, frames = zip(*batch)
             results.extend(zip(indexes, detector.detect(list(frames))))
+            if on_progress and total:
+                on_progress(min(1.0, (indexes[-1] + 1) / total))
     return results
 
 

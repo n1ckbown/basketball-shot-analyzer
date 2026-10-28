@@ -155,10 +155,10 @@ def check_setup(detections: list[Detection], width: int) -> dict:
     }
 
 
-def analyze_video(path, detector) -> dict:
+def analyze_video(path, detector, on_progress=None) -> dict:
     """Shots in a video file as JSON-ready data: totals, the video length, then the time and result of each shot."""
     fps = cv2.VideoCapture(str(path)).get(cv2.CAP_PROP_FPS)
-    frames = detect_video(path, detector)
+    frames = detect_video(path, detector, on_progress=on_progress)
     shots = find_shots(frames, fps)
     return {
         "attempts": len(shots),
