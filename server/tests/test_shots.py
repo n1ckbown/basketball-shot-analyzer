@@ -12,7 +12,8 @@ def frames_for(path, hoops=(BACKBOARD, RIM)):
     def ball(x, y):
         return Detection("ball", 0.8, (x - 10, y - 10, x + 10, y + 10))
 
-    return [(i, [*hoops, ball(x, y)]) for i, (x, y) in enumerate(path)]
+    # None in the path is a frame where the ball isn't seen.
+    return [(i, [*hoops, ball(*p)]) for i, p in enumerate(path) if p]
 
 
 def test_locate_rim_picks_the_wide_box_at_the_usual_hoop_spot():
@@ -48,4 +49,11 @@ def test_put_back_after_a_miss_is_a_make():
 def test_ball_dropping_past_the_rim_from_outside_is_a_miss():
     outside = [(20, 90), (40, 120), (90, 170), (110, 200), (120, 300)]
     shots = find_shots(frames_for([(0, 40), (10, 60)] + outside), fps=30)
+    assert [s.made for s in shots] == [False]
+
+
+def test_rim_bounce_out_of_the_picture_is_one_shot():
+    # With the rim near the top of the frame, a high bounce leaves the picture for over a second.
+    up_and_away = [(200, 60), (220, 20)] + [None] * 40 + [(240, 30), (250, 90), (260, 300)]
+    shots = find_shots(frames_for(APPROACH + up_and_away), fps=30)
     assert [s.made for s in shots] == [False]
