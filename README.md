@@ -96,7 +96,7 @@ Each step is one pull request.
 3. Server: upload endpoint that accepts a video and returns a job ID (done: `POST /videos`, saved to `UPLOAD_DIR`, default `uploads/`)
 4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
-6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; needs testing on a real phone)
+6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; tested on a real phone)
 7. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
 ## Ownership
