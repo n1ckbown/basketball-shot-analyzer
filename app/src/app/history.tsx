@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorText } from '../analyze';
-import { clock, dayLabel, percent, type Session, loadSessions } from '../sessions';
+import { dayLabel, isShots, listSummary, percent, type Session, loadSessions } from '../sessions';
 import { colors } from '../theme';
 
 const CHART_SESSIONS = 10;
@@ -19,10 +19,12 @@ export default function History() {
     loadSessions().then(setSessions, (error) => setMessage(`Couldn't load your sessions: ${errorText(error)}`));
   }, []);
 
-  const makes = sessions.reduce((sum, s) => sum + s.makes, 0);
-  const attempts = sessions.reduce((sum, s) => sum + s.attempts, 0);
+  // Shooting percentages come from make/miss sessions only; form checks are listed but not counted.
+  const shooting = sessions.filter(isShots);
+  const makes = shooting.reduce((sum, s) => sum + s.makes, 0);
+  const attempts = shooting.reduce((sum, s) => sum + s.attempts, 0);
   const overall = percent({ makes, attempts });
-  const chart = sessions.slice(0, CHART_SESSIONS).reverse(); // oldest on the left
+  const chart = shooting.slice(0, CHART_SESSIONS).reverse(); // oldest on the left
   return (
     <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 32 }]}>
       <Pressable accessibilityRole="button" accessibilityLabel="Home" style={styles.back} onPress={() => router.back()}>
@@ -35,52 +37,55 @@ export default function History() {
 
       {sessions.length ? (
         <>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>All sessions</Text>
-            <Text style={styles.bigNumber}>{overall}%</Text>
-            <Text style={styles.label}>
-              {makes} of {attempts} made over {sessions.length} {sessions.length === 1 ? 'session' : 'sessions'}
-            </Text>
-            <View
-              accessible
-              accessibilityRole="image"
-              accessibilityLabel={`Shooting percentage by session, oldest first: ${chart.map((s) => `${percent(s)}%`).join(', ')}`}
-              style={styles.chart}>
-              {chart.map((session, index) => (
-                <View key={session.id} style={styles.barColumn}>
-                  <Text style={styles.barValue}>{percent(session)}%</Text>
-                  <View
-                    style={[
-                      styles.bar,
-                      { height: Math.max(6, (CHART_HEIGHT * percent(session)) / 100) },
-                      index === chart.length - 1 && styles.latestBar,
-                    ]}
-                  />
-                </View>
-              ))}
+          {shooting.length ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>All sessions</Text>
+              <Text style={styles.bigNumber}>{overall}%</Text>
+              <Text style={styles.label}>
+                {makes} of {attempts} made over {shooting.length} {shooting.length === 1 ? 'session' : 'sessions'}
+              </Text>
+              <View
+                accessible
+                accessibilityRole="image"
+                accessibilityLabel={`Shooting percentage by session, oldest first: ${chart.map((s) => `${percent(s)}%`).join(', ')}`}
+                style={styles.chart}>
+                {chart.map((session, index) => (
+                  <View key={session.id} style={styles.barColumn}>
+                    <Text style={styles.barValue}>{percent(session)}%</Text>
+                    <View
+                      style={[
+                        styles.bar,
+                        { height: Math.max(6, (CHART_HEIGHT * percent(session)) / 100) },
+                        index === chart.length - 1 && styles.latestBar,
+                      ]}
+                    />
+                  </View>
+                ))}
+              </View>
             </View>
-          </View>
+          ) : null}
 
           <Text accessibilityRole="header" style={styles.sectionTitle}>
             Sessions
           </Text>
           <View style={styles.list}>
-            {sessions.map((session, index) => (
-              <Pressable
-                key={session.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${dayLabel(session.date)}: ${session.makes} of ${session.attempts} made, ${percent(session)}%`}
-                style={[styles.row, index > 0 && styles.rowDivider]}
-                onPress={() => router.push(`/results/${session.id}`)}>
-                <View>
-                  <Text style={styles.rowTitle}>{dayLabel(session.date)}</Text>
-                  <Text style={styles.label}>
-                    {clock(session.duration)} · {session.makes} of {session.attempts}
-                  </Text>
-                </View>
-                <Text style={styles.rowValue}>{percent(session)}%</Text>
-              </Pressable>
-            ))}
+            {sessions.map((session, index) => {
+              const summary = listSummary(session);
+              return (
+                <Pressable
+                  key={session.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${dayLabel(session.date)}: ${summary.spoken}`}
+                  style={[styles.row, index > 0 && styles.rowDivider]}
+                  onPress={() => router.push(`/results/${session.id}`)}>
+                  <View>
+                    <Text style={styles.rowTitle}>{dayLabel(session.date)}</Text>
+                    <Text style={styles.label}>{summary.detail}</Text>
+                  </View>
+                  <Text style={styles.rowValue}>{summary.value}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </>
       ) : (

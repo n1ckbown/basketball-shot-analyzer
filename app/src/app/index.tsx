@@ -1,12 +1,12 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorText } from '../analyze';
 import { Ring } from '../components/Ring';
-import { clock, dayLabel, percent, type Session, loadSessions } from '../sessions';
+import { dayLabel, isShots, listSummary, type Mode, percent, type Session, loadSessions } from '../sessions';
 import { colors } from '../theme';
 
 const RECENT_COUNT = 5;
@@ -23,7 +23,15 @@ export default function Home() {
     }, []),
   );
 
-  async function pickVideo() {
+  function chooseUpload() {
+    Alert.alert('Upload a video', 'What should we look at?', [
+      { text: 'Makes and misses', onPress: () => pickVideo('shots') },
+      { text: 'Form', onPress: () => pickVideo('form') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function pickVideo(mode: Mode) {
     setMessage('');
     try {
       // iOS hands over the original video file only with photo library read access.
@@ -32,13 +40,13 @@ export default function Home() {
         return;
       }
       const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'] });
-      if (!picked.canceled) router.push({ pathname: '/analyze', params: { uri: picked.assets[0].uri } });
+      if (!picked.canceled) router.push({ pathname: '/analyze', params: { uri: picked.assets[0].uri, mode } });
     } catch (error) {
       setMessage(`Couldn't open video: ${errorText(error)}`);
     }
   }
 
-  const latest = sessions[0];
+  const latest = sessions.find(isShots); // the ring shows a shooting percentage, which form checks don't have
   return (
     <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 32 }]}>
       <View style={styles.header}>
@@ -76,7 +84,13 @@ export default function Home() {
         <Pressable accessibilityRole="button" style={[styles.button, styles.primary]} onPress={() => router.push('/record')}>
           <Text style={[styles.buttonText, styles.primaryText]}>Start a session</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" style={styles.button} onPress={pickVideo}>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.button}
+          onPress={() => router.push({ pathname: '/record', params: { mode: 'form' } })}>
+          <Text style={styles.buttonText}>Check your form</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.button} onPress={chooseUpload}>
           <Text style={styles.buttonText}>Upload a video</Text>
         </Pressable>
         {message ? <Text style={styles.message}>{message}</Text> : null}
@@ -93,22 +107,23 @@ export default function Home() {
             </Pressable>
           </View>
           <View style={styles.list}>
-            {sessions.slice(0, RECENT_COUNT).map((session, index) => (
-              <Pressable
-                key={session.id}
-                accessibilityRole="button"
-                accessibilityLabel={`${dayLabel(session.date)}: ${session.makes} of ${session.attempts} made, ${percent(session)}%`}
-                style={[styles.row, index > 0 && styles.rowDivider]}
-                onPress={() => router.push(`/results/${session.id}`)}>
-                <View>
-                  <Text style={styles.rowTitle}>{dayLabel(session.date)}</Text>
-                  <Text style={styles.label}>
-                    {clock(session.duration)} · {session.makes} of {session.attempts}
-                  </Text>
-                </View>
-                <Text style={styles.rowValue}>{percent(session)}%</Text>
-              </Pressable>
-            ))}
+            {sessions.slice(0, RECENT_COUNT).map((session, index) => {
+              const summary = listSummary(session);
+              return (
+                <Pressable
+                  key={session.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${dayLabel(session.date)}: ${summary.spoken}`}
+                  style={[styles.row, index > 0 && styles.rowDivider]}
+                  onPress={() => router.push(`/results/${session.id}`)}>
+                  <View>
+                    <Text style={styles.rowTitle}>{dayLabel(session.date)}</Text>
+                    <Text style={styles.label}>{summary.detail}</Text>
+                  </View>
+                  <Text style={styles.rowValue}>{summary.value}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         </View>
       ) : null}

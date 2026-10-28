@@ -4,8 +4,9 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { errorText } from '../../analyze';
+import { FormReport } from '../../components/FormReport';
 import { Ring } from '../../components/Ring';
-import { clock, dayLabel, percent, type Session, loadSessions } from '../../sessions';
+import { clock, dayLabel, isForm, percent, type Session, loadSessions } from '../../sessions';
 import { colors } from '../../theme';
 
 export default function Results() {
@@ -39,6 +40,23 @@ export default function Results() {
           {done}
         </View>
         <Text style={styles.label}>{message}</Text>
+      </View>
+    );
+  }
+
+  if (isForm(session)) {
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.header}>
+          <View>
+            <Text accessibilityRole="header" style={styles.title}>
+              {dayLabel(session.date)}
+            </Text>
+            <Text style={styles.label}>Form check · {clock(session.duration)}</Text>
+          </View>
+          {done}
+        </View>
+        <FormReport shots={session.shots} bottomInset={insets.bottom} />
       </View>
     );
   }

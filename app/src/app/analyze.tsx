@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { analyzeVideo, errorText, type Progress } from '../analyze';
 import { Ring } from '../components/Ring';
 import { StepIcon } from '../components/StepIcon';
-import { saveSession } from '../sessions';
+import { type Mode, saveSession } from '../sessions';
 import { colors } from '../theme';
 
 const STEPS = [
@@ -17,7 +17,7 @@ const STEPS = [
 export default function Analyze() {
   const insets = useSafeAreaInsets();
   // note: how saving the recording to the photo library went, passed on by the record screen.
-  const { uri, note } = useLocalSearchParams<{ uri: string; note?: string }>();
+  const { uri, note, mode = 'shots' } = useLocalSearchParams<{ uri: string; note?: string; mode?: Mode }>();
   const [progress, setProgress] = useState<Progress>({ step: 'upload', fraction: 0 });
   const [timeLeft, setTimeLeft] = useState('');
   const [error, setError] = useState('');
@@ -36,12 +36,12 @@ export default function Analyze() {
         setTimeLeft(minutes < 1 ? 'Less than a minute left' : `About ${Math.round(minutes)} min left`);
       }
     }
-    analyzeVideo(uri, onProgress, controller.signal)
+    analyzeVideo(uri, mode, onProgress, controller.signal)
       .then(saveSession)
       .then((session) => router.replace(`/results/${session.id}`))
       .catch((reason) => controller.signal.aborted || setError(errorText(reason)));
     return () => controller.abort();
-  }, [uri]);
+  }, [uri, mode]);
 
   const percent = Math.floor(100 * progress.fraction);
   const headline = progress.step === 'upload' ? 'Uploading' : 'Finding your shots';
@@ -73,7 +73,9 @@ export default function Analyze() {
             <Text style={styles.status}>
               {progress.step === 'upload'
                 ? 'Sending your video to the server'
-                : timeLeft || 'This takes about half as long as the video.'}
+                : timeLeft ||
+                  // Form checks also run the body-pose model, so they take about twice as long.
+                  `This takes about ${mode === 'form' ? 'as long as' : 'half as long as'} the video.`}
             </Text>
             <View style={styles.steps}>
               {STEPS.map(({ step, label }, index) => (

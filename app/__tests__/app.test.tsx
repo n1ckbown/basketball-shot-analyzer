@@ -4,6 +4,7 @@ import { File } from 'expo-file-system';
 import { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
 import { Asset, usePermissions } from 'expo-media-library';
 import { renderRouter } from 'expo-router/testing-library';
+import { Alert } from 'react-native';
 
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 
@@ -89,6 +90,17 @@ const DONE = {
     { time: 70.4, made: true, arc_ft: null },
   ],
 };
+const FORM_DONE = {
+  status: 'done',
+  mode: 'form',
+  attempts: 3,
+  duration: 20,
+  shots: [
+    { time: 2.9, knee_bend: 101, elbow_at_release: 146, release_timing: 'at the top', follow_through: 0.2 },
+    { time: 12.0, knee_bend: 124, elbow_at_release: 175, release_timing: 'rising', follow_through: 1.5 },
+    { time: 16.0, knee_bend: 120, elbow_at_release: 150, release_timing: 'falling', follow_through: 0.3 },
+  ],
+};
 const APP = './src/app';
 const SETUP_OK = { hoop: true, room_above: true, close_enough: true };
 // Answers to the camera's setup checks, in order; the last one repeats.
@@ -118,6 +130,13 @@ function mockServer(...jobStates: object[]) {
   for (const state of jobStates) fetchMock.mockResolvedValueOnce({ json: async () => state });
   globalThis.fetch = fetchMock;
   return { upload, fetchMock };
+}
+
+// "Upload a video" first asks what to look at; this answers it.
+function answerUploadQuestion(choice: 'Makes and misses' | 'Form') {
+  jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+    buttons?.find((button) => button.text === choice)?.onPress?.();
+  });
 }
 
 function mockPickedVideo(granted: boolean, picked: object) {
@@ -241,6 +260,7 @@ test('explains when no server address is set', async () => {
 
 test('uploads a video picked from the library and shows its results', async () => {
   mockPickedVideo(true, { canceled: false, assets: [{ uri: 'file:///cache/old-session.mp4' }] });
+  answerUploadQuestion('Makes and misses');
   const { upload } = mockServer(DONE);
   await renderRouter(APP);
 
@@ -249,12 +269,16 @@ test('uploads a video picked from the library and shows its results', async () =
   expect(launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['videos'] });
   expect(await screen.findByRole('image', { name: '67% made, 2 of 3' })).toBeTruthy();
   expect(File).toHaveBeenCalledWith('file:///cache/old-session.mp4');
-  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ mimeType: 'video/mp4' }));
+  expect(upload).toHaveBeenCalledWith(
+    `${SERVER}/videos`,
+    expect.objectContaining({ mimeType: 'video/mp4', parameters: { mode: 'shots' } }),
+  );
   expect(Asset.create).not.toHaveBeenCalled();
 });
 
 test('does nothing when the user cancels the video picker', async () => {
   mockPickedVideo(true, { canceled: true, assets: null });
+  answerUploadQuestion('Makes and misses');
   const { upload } = mockServer();
   await renderRouter(APP);
 
@@ -267,6 +291,7 @@ test('does nothing when the user cancels the video picker', async () => {
 
 test('explains when photo library access is denied for picking a video', async () => {
   mockPickedVideo(false, { canceled: true, assets: null });
+  answerUploadQuestion('Makes and misses');
   await renderRouter(APP);
 
   await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
@@ -342,4 +367,52 @@ test('results explain when no arc could be measured', async () => {
   await renderRouter(APP, { initialUrl: '/results/1' });
 
   expect(await screen.findByText(/Arc not measured: the top of the ball's flight wasn't in view/)).toBeTruthy();
+});
+
+test('a form check films without hoop checks and reports the form', async () => {
+  mockPermissions(true, true);
+  const { upload } = mockServer(FORM_DONE);
+  const user = userEvent.setup();
+  await renderRouter(APP);
+
+  await user.press(screen.getByRole('button', { name: 'Check your form' }));
+  expect(await screen.findByRole('header', { name: 'Form check' })).toBeTruthy();
+  await user.press(await screen.findByRole('button', { name: 'Start recording' }));
+  await user.press(await screen.findByRole('button', { name: 'Stop recording' }));
+
+  expect(await screen.findByText('Form check · 0:20')).toBeTruthy();
+  expect(upload).not.toHaveBeenCalledWith(`${SERVER}/setup-check`, expect.anything()); // no hoop needed
+  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ parameters: { mode: 'form' } }));
+  expect(screen.getByText('120°')).toBeTruthy(); // middle knee bend
+  expect(screen.getByText('At the bottom of your dip (180° is straight) · varies by about 12° shot to shot')).toBeTruthy();
+  expect(screen.getByText('Try finishing with a straighter shooting arm.')).toBeTruthy(); // elbow 150° in the middle
+  expect(screen.getByText('1 on the way up · 1 at the top · 1 on the way down')).toBeTruthy();
+  expect(screen.getByText('Hold your follow-through until the ball reaches the rim.')).toBeTruthy();
+  expect(screen.getByText('Knees 101° · elbow 146° · at the top · held 0.2 s')).toBeTruthy();
+});
+
+test('an uploaded video can be checked for form', async () => {
+  mockPickedVideo(true, { canceled: false, assets: [{ uri: 'file:///cache/form.mov' }] });
+  answerUploadQuestion('Form');
+  const { upload } = mockServer(FORM_DONE);
+  await renderRouter(APP);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(await screen.findByText('Form check · 0:20')).toBeTruthy();
+  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ parameters: { mode: 'form' } }));
+});
+
+test('form checks are listed but left out of shooting totals', async () => {
+  saveSessions([
+    { ...FORM_DONE, id: '3', date: new Date().toISOString() },
+    { id: '2', date: new Date().toISOString(), attempts: 22, makes: 4, duration: 256, shots: [] },
+  ]);
+  const user = userEvent.setup();
+  await renderRouter(APP);
+
+  expect(screen.getByRole('button', { name: 'Latest session: 18%, 4 of 22 made' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Today: form check, 3 shots' })).toBeTruthy();
+  await user.press(screen.getByRole('button', { name: 'See all' }));
+  expect(await screen.findByText('4 of 22 made over 1 session')).toBeTruthy();
 });

@@ -112,7 +112,8 @@ Each step is one pull request.
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
 6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; tested on a real phone)
 7. App: new look (in progress: Home with saved sessions and a redesigned results screen are done and tested on a phone, under `app/src/app/`; the setup check with camera flip, the analyzing screen with live progress, and the history screen are done and need a phone test)
-8. Server + app: per-shot feedback (release angle, arc, left/right miss)
+8. Server + app: per-shot feedback (in progress: arc height is done; next: left/right/short/long on misses)
+9. Form check: film from the side, no hoop needed; measures knee bend, elbow at release, release timing in the jump and follow-through on each shot, with ViTPose (Apache-2.0) for body pose (done: `server/app/form.py`, finds all 32 shots taken in the picture on the side-view session; needs a phone test)
 
 ## Ownership
 

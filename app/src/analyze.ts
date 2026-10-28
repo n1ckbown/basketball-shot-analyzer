@@ -1,6 +1,6 @@
 import { File, UploadType } from 'expo-file-system';
 
-import type { Results } from './sessions';
+import type { Mode, Results } from './sessions';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -27,9 +27,10 @@ export async function checkSetup(photoUri: string): Promise<SetupChecks> {
 /** Which step a video is on, and how far through it (0 to 1). */
 export type Progress = { step: 'upload' | 'analysis'; fraction: number };
 
-/** Uploads a video to the analysis server and waits for its makes and misses. */
+/** Uploads a video to the analysis server and waits for its makes and misses, or its form. */
 export async function analyzeVideo(
   uri: string,
+  mode: Mode,
   onProgress: (progress: Progress) => void,
   signal: AbortSignal,
 ): Promise<Results> {
@@ -41,6 +42,7 @@ export async function analyzeVideo(
     fieldName: 'file', // The server reads this field; the native default is the file name, not 'file' as documented.
     // iPhones record .mov and Android phones .mp4; the server accepts only these two types.
     mimeType: uri.toLowerCase().endsWith('.mp4') ? 'video/mp4' : 'video/quicktime',
+    parameters: { mode },
     // On the phone these arrive as BigInt despite the number type, and BigInt can't mix with numbers.
     onProgress: ({ bytesSent, totalBytes }) =>
       onProgress({ step: 'upload', fraction: Math.min(0.99, Number(bytesSent) / Number(totalBytes)) }),
