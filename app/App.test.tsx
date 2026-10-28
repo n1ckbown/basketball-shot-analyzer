@@ -1,6 +1,7 @@
 import { render, screen, userEvent } from '@testing-library/react-native';
 import { useCameraPermissions } from 'expo-camera';
 import { File } from 'expo-file-system';
+import { launchImageLibraryAsync, requestMediaLibraryPermissionsAsync } from 'expo-image-picker';
 import { Asset, usePermissions } from 'expo-media-library';
 
 import App from './App';
@@ -27,6 +28,11 @@ jest.mock('expo-camera', () => {
 jest.mock('expo-media-library', () => ({
   Asset: { create: jest.fn() },
   usePermissions: jest.fn(),
+}));
+
+jest.mock('expo-image-picker', () => ({
+  requestMediaLibraryPermissionsAsync: jest.fn(),
+  launchImageLibraryAsync: jest.fn(),
 }));
 
 jest.mock('expo-file-system', () => {
@@ -128,6 +134,49 @@ test('reports a failed analysis and lets the user record again', async () => {
 
   expect(await screen.findByText("Couldn't analyze: Could not open video")).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Start recording' })).toBeEnabled();
+});
+
+function mockPickedVideo(granted: boolean, picked: object) {
+  jest.mocked(requestMediaLibraryPermissionsAsync).mockResolvedValue({ granted } as never);
+  jest.mocked(launchImageLibraryAsync).mockResolvedValue(picked as never);
+}
+
+test('uploads a video picked from the library and shows makes and misses', async () => {
+  mockPermissions(true, true);
+  mockPickedVideo(true, { canceled: false, assets: [{ uri: 'file:///cache/old-session.mp4' }] });
+  const { upload } = mockServer(DONE);
+  await render(<App />);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(launchImageLibraryAsync).toHaveBeenCalledWith({ mediaTypes: ['videos'] });
+  expect(File).toHaveBeenCalledWith('file:///cache/old-session.mp4');
+  expect(upload).toHaveBeenCalledWith(`${SERVER}/videos`, expect.objectContaining({ mimeType: 'video/mp4' }));
+  expect(await screen.findByRole('header', { name: '2 of 3 made (67%)' })).toBeTruthy();
+  expect(Asset.create).not.toHaveBeenCalled();
+});
+
+test('does nothing when the user cancels the video picker', async () => {
+  mockPermissions(true, true);
+  mockPickedVideo(true, { canceled: true, assets: null });
+  const { upload } = mockServer();
+  await render(<App />);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(launchImageLibraryAsync).toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+});
+
+test('explains when photo library access is denied for picking a video', async () => {
+  mockPermissions(true, true);
+  mockPickedVideo(false, { canceled: true, assets: null });
+  await render(<App />);
+
+  await userEvent.setup().press(screen.getByRole('button', { name: 'Upload a video' }));
+
+  expect(await screen.findByText("Can't open videos: allow photo library access in Settings.")).toBeTruthy();
+  expect(launchImageLibraryAsync).not.toHaveBeenCalled();
 });
 
 test('explains when no server address is set', async () => {

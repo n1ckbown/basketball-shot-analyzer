@@ -1,9 +1,10 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { File, UploadType } from 'expo-file-system';
+import * as ImagePicker from 'expo-image-picker';
 import { Asset, usePermissions as useMediaPermissions } from 'expo-media-library';
 import { StatusBar } from 'expo-status-bar';
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const POLL_INTERVAL_MS = 3000;
 const SETUP_TIP =
@@ -94,6 +95,24 @@ export default function App() {
     }
   }
 
+  async function pickVideo() {
+    setMessage('');
+    setAnalysis('');
+    let uri: string | undefined;
+    try {
+      // iOS hands over the original video file only with photo library read access.
+      if (Platform.OS === 'ios' && !(await ImagePicker.requestMediaLibraryPermissionsAsync()).granted) {
+        setMessage("Can't open videos: allow photo library access in Settings.");
+        return;
+      }
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['videos'] });
+      uri = picked.canceled ? undefined : picked.assets[0].uri;
+    } catch (error) {
+      setMessage(`Couldn't open video: ${errorText(error)}`);
+    }
+    if (uri) await analyzeVideo(uri);
+  }
+
   async function startRecording() {
     setMessage('');
     setAnalysis('');
@@ -163,6 +182,16 @@ export default function App() {
           onPress={isRecording ? () => camera.current?.stopRecording() : startRecording}
           style={[styles.recordButton, isRecording && styles.recording, !canRecord && styles.disabled]}
         />
+        {!isRecording ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isAnalyzing }}
+            disabled={isAnalyzing}
+            onPress={pickVideo}
+            style={[styles.button, isAnalyzing && styles.disabled]}>
+            <Text style={styles.buttonText}>Upload a video</Text>
+          </Pressable>
+        ) : null}
       </View>
       <StatusBar style="light" />
     </View>
