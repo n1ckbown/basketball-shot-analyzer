@@ -97,7 +97,7 @@ Each step is one pull request.
 4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
 6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; tested on a real phone)
-7. App: new look (in progress: Home with saved sessions and a redesigned results screen are done, under `app/src/app/`; next: setup check with camera flip, then the analyzing and history screens)
+7. App: new look (in progress: Home with saved sessions and a redesigned results screen are done and tested on a phone, under `app/src/app/`; next: setup check with camera flip, then the analyzing and history screens)
 8. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
 ## Ownership
