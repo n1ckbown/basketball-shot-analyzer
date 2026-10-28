@@ -49,7 +49,9 @@ const store = () => new File(Paths.document, 'sessions.json');
 /** Saved sessions, newest first. */
 export async function loadSessions(): Promise<Session[]> {
   const file = store();
-  return file.exists ? JSON.parse(await file.text()) : [];
+  if (!file.exists) return [];
+  // Servers from before Oct 28 sent no duration; the last shot is the best stand-in.
+  return (JSON.parse(await file.text()) as Session[]).map((s) => ({ ...s, duration: s.duration ?? s.shots.at(-1)?.time ?? 0 }));
 }
 
 export async function saveSession(results: Results): Promise<Session> {

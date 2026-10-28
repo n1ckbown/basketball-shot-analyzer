@@ -360,6 +360,13 @@ test('history totals every session and opens one', async () => {
   expect(await screen.findByRole('image', { name: '31% made, 11 of 35' })).toBeTruthy();
 });
 
+test('sessions saved without a duration show the last shot time instead of NaN', async () => {
+  saveSessions([{ id: '1', date: new Date().toISOString(), attempts: 1, makes: 1, shots: [{ time: 241.2, made: true }] }]);
+  await renderRouter(APP, { initialUrl: '/results/1' });
+
+  expect(await screen.findByText('4:01 session')).toBeTruthy();
+});
+
 test('results explain when no arc could be measured', async () => {
   saveSessions([
     { id: '1', date: new Date().toISOString(), attempts: 1, makes: 0, duration: 30, shots: [{ time: 5, made: false }] },
