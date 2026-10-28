@@ -79,6 +79,14 @@ npm test
 npx expo start      # scan the QR code with Expo Go (Android) or the Camera app (iPhone)
 ```
 
+To get makes and misses, the app uploads each recording, or a video picked with "Upload a video", to the analysis server. Start the server as described in "Quick start (server)" (with `--host 0.0.0.0`). Then put the computer's Wi-Fi address in `app/.env`, which is kept out of git, and reload the app:
+
+```
+EXPO_PUBLIC_SERVER_URL=http://192.168.1.20:8000
+```
+
+Find the address with `ipconfig` (look for "IPv4 Address" under Wi-Fi). It can change when the router hands out a new one. The first time the server runs, Windows asks whether Python may accept connections: allow it. If the Wi-Fi is set to "Public" in Windows, either allow Python on public networks or switch that network to Private.
+
 ## Roadmap
 
 Each step is one pull request.
@@ -88,7 +96,7 @@ Each step is one pull request.
 3. Server: upload endpoint that accepts a video and returns a job ID (done: `POST /videos`, saved to `UPLOAD_DIR`, default `uploads/`)
 4. Server: detect the ball and hoop in each frame (done: `server/app/detection.py` plus a detector fine-tuned with `server/training/`)
 5. Server: track shots and decide make or miss, with a count per session (done: `server/app/shots.py`; next: test on more sessions and camera angles)
-6. App: upload a session and show makes, misses and shooting percentage (server side done: `GET /videos/{job_id}`; next: upload and results screen in the app)
+6. App: upload a session and show makes, misses and shooting percentage (done: uploads after recording or a video picked from the phone, then shows the totals and each shot; tested on a real phone)
 7. Server + app: per-shot feedback (release angle, arc, left/right miss)
 
 ## Ownership

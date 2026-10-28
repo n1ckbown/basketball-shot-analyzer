@@ -32,9 +32,16 @@
       [
         "expo-media-library",
         {
-          "photosPermission": false,
+          "photosPermission": "Allow $(PRODUCT_NAME) to open the videos you choose to analyze.",
           "savePhotosPermission": "Allow $(PRODUCT_NAME) to save your recorded sessions to your photo library.",
           "granularPermissions": ["video"]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to open the videos you choose to analyze.",
+          "microphonePermission": false
         }
       ]
     ]
