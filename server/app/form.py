@@ -49,13 +49,13 @@ class Pose:
 class PoseTracker:
     """The main person's body keypoints and the ball, per frame."""
 
-    def __init__(self):
+    def __init__(self, balls: Detector | None = None):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.person_processor = AutoImageProcessor.from_pretrained(PERSON_MODEL)
         self.person_model = AutoModelForObjectDetection.from_pretrained(PERSON_MODEL).to(self.device).eval()
         labels = self.person_model.config.id2label
         self.person_id = next(k for k, v in labels.items() if v == "person")
-        self.balls = Detector()
+        self.balls = balls or Detector()
         self.pose_processor = AutoImageProcessor.from_pretrained(POSE_MODEL)
         self.pose_model = VitPoseForPoseEstimation.from_pretrained(POSE_MODEL).to(self.device).eval()
 
@@ -179,7 +179,6 @@ def analyze_form(path, tracker, on_progress=None) -> dict:
     poses = {i: pose for i, pose in frames if pose is not None}
     shots = [measure(release, poses, fps) for release in find_releases(poses, fps)]
     return {
-        "mode": "form",
         "attempts": len(shots),
         "duration": round(len(frames) / fps, 1),
         "shots": [{"time": round(s.frame / fps, 1), "knee_bend": s.knee_bend, "elbow_at_release": s.elbow_at_release,

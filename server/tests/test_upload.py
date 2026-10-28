@@ -9,6 +9,7 @@ client = TestClient(main.app)
 
 
 RESULT = {"attempts": 2, "makes": 1, "shots": [{"time": 3.0, "made": True}, {"time": 9.5, "made": False}]}
+FORM_RESULT = {"attempts": 1, "shots": [{"time": 4.0, "knee_bend": 118, "elbow_at_release": 172}]}
 
 
 class RunNow:
@@ -23,6 +24,7 @@ def upload_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
     monkeypatch.setattr(main, "worker", RunNow())
     monkeypatch.setattr(main, "analyze_video", lambda path, on_progress: RESULT)
+    monkeypatch.setattr(main, "analyze_form", lambda path, on_progress: FORM_RESULT)
     return tmp_path
 
 
@@ -68,7 +70,22 @@ def test_upload_rejects_file_over_limit(upload_dir, monkeypatch):
 def test_result_is_available_after_processing():
     job_id = upload(b"fake video bytes").json()["job_id"]
 
-    assert client.get(f"/videos/{job_id}").json() == {"status": "done", **RESULT}
+    assert client.get(f"/videos/{job_id}").json() == {"status": "done", "mode": "shots", **RESULT}
+
+
+def test_form_videos_get_form_analysis(upload_dir):
+    response = client.post("/videos", files={"file": ("a.mov", b"video", "video/quicktime")}, data={"mode": "form"})
+    job_id = response.json()["job_id"]
+
+    assert client.get(f"/videos/{job_id}").json() == {"status": "done", "mode": "form", **FORM_RESULT}
+    assert (upload_dir / f"{job_id}.form").exists()  # so a restart still analyzes it as a form video
+
+
+def test_unknown_modes_are_rejected(upload_dir):
+    response = client.post("/videos", files={"file": ("a.mov", b"video", "video/quicktime")}, data={"mode": "dance"})
+
+    assert response.status_code == 422
+    assert list(upload_dir.iterdir()) == []
 
 
 def test_result_says_processing_until_analysis_finishes(upload_dir):
@@ -139,5 +156,5 @@ def test_videos_left_unanalyzed_by_a_restart_are_analyzed_on_startup(upload_dir)
     (upload_dir / f"{'2' * 32}.json").write_text('{"status": "done"}')
 
     with TestClient(main.app) as restarted:
-        assert restarted.get(f"/videos/{'1' * 32}").json() == {"status": "done", **RESULT}
+        assert restarted.get(f"/videos/{'1' * 32}").json() == {"status": "done", "mode": "shots", **RESULT}
         assert restarted.get(f"/videos/{'2' * 32}").json() == {"status": "done"}  # already analyzed: left alone
