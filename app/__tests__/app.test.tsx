@@ -125,6 +125,11 @@ function mockPickedVideo(granted: boolean, picked: object) {
   jest.mocked(launchImageLibraryAsync).mockResolvedValue(picked as never);
 }
 
+function saveSessions(sessions: object[]) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('expo-file-system').files.set('file:///documents/sessions.json', JSON.stringify(sessions));
+}
+
 function savedSessions() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const json = require('expo-file-system').files.get('file:///documents/sessions.json');
@@ -167,7 +172,7 @@ test('asks for camera access before showing the camera', async () => {
 // Real timers: the app waits one 3-second poll before the result arrives (fake timers hung this test).
 test('records, saves, analyzes and shows the session results', async () => {
   mockPermissions(true, true);
-  const { upload, fetchMock } = mockServer({ status: 'processing' }, DONE);
+  const { upload, fetchMock } = mockServer({ status: 'processing', progress: 0.4 }, DONE);
   await recordOneSession();
 
   expect(Asset.create).toHaveBeenCalledWith('file:///cache/session.mov');
@@ -177,6 +182,7 @@ test('records, saves, analyzes and shows the session results', async () => {
     expect.objectContaining({ fieldName: 'file', mimeType: 'video/quicktime' }),
   );
   expect(await screen.findByText('Saved to your photo library.')).toBeTruthy();
+  expect(await screen.findByRole('image', { name: 'Finding your shots: 40%' })).toBeTruthy();
 
   expect(await screen.findByRole('image', { name: '67% made, 2 of 3' }, { timeout: 5000 })).toBeTruthy();
   expect(fetchMock).toHaveBeenCalledWith(`${SERVER}/videos/abc123`, expect.anything());
@@ -306,4 +312,21 @@ test('flips to the front camera before recording, not during', async () => {
 
   expect(await screen.findByRole('button', { name: 'Stop recording' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Switch to back camera' })).toBeNull();
+});
+
+test('history totals every session and opens one', async () => {
+  saveSessions([
+    { id: '2', date: new Date().toISOString(), attempts: 22, makes: 4, duration: 256, shots: [] },
+    { id: '1', date: '2026-10-20T18:00:00Z', attempts: 35, makes: 11, duration: 536, shots: [] },
+  ]);
+  const user = userEvent.setup();
+  await renderRouter(APP);
+
+  await user.press(screen.getByRole('button', { name: 'See all' }));
+
+  expect(await screen.findByText('26%')).toBeTruthy();
+  expect(screen.getByText('15 of 57 made over 2 sessions')).toBeTruthy();
+  expect(screen.getByRole('image', { name: 'Shooting percentage by session, oldest first: 31%, 18%' })).toBeTruthy();
+  await user.press(screen.getByRole('button', { name: /^Oct 20: 11 of 35 made/ }));
+  expect(await screen.findByRole('image', { name: '31% made, 11 of 35' })).toBeTruthy();
 });

@@ -84,9 +84,14 @@ export default function Home() {
 
       {sessions.length ? (
         <View style={styles.section}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>
-            Recent
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text accessibilityRole="header" style={styles.sectionTitle}>
+              Recent
+            </Text>
+            <Pressable accessibilityRole="button" style={styles.seeAll} onPress={() => router.push('/history')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </Pressable>
+          </View>
           <View style={styles.list}>
             {sessions.slice(0, RECENT_COUNT).map((session, index) => (
               <Pressable
@@ -189,10 +194,24 @@ const styles = StyleSheet.create({
   section: {
     gap: 10,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   sectionTitle: {
     color: colors.text,
     fontSize: 22,
     fontWeight: '700',
+  },
+  seeAll: {
+    paddingVertical: 8,
+    paddingLeft: 16,
+  },
+  seeAllText: {
+    color: colors.accent,
+    fontSize: 15,
+    fontWeight: '500',
   },
   list: {
     backgroundColor: colors.card,
